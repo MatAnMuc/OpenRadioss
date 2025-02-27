@@ -152,7 +152,7 @@ C-----------------------------------------------
            END IF
 C
            IX=IRECT(1,L)  
-           IX1(I)=IX      
+           IX1(I)=IX
            X1(I)=X(1,IX)  
            Y1(I)=X(2,IX)  
            Z1(I)=X(3,IX)  
@@ -248,6 +248,7 @@ C
             STIF(I)=STF(L)*ABS(STIFI(NIN)%P(NN))
           END IF
          ENDDO
+         !HERE THE STIFFNESS CALCULATION IS DONE DEPENDING ON Interface stiffness definition flag (ISTF) (HERE: IGSTI)
         ELSEIF(IGSTI==2)THEN
          DO I=1,JLT
           L  = CAND_E(I)
@@ -258,6 +259,7 @@ C
             NN = NI - NSN
             STIF(I)=ABS(STIFI(NIN)%P(NN))
           END IF
+          !ISTF = 2: Interface stiffness is the average of the main and secondary stiffness.
           STIF(I)=HALF*(STF(L)+STIF(I))
           STIF(I)=MAX(KMIN,MIN(STIF(I),KMAX))
          ENDDO
@@ -271,6 +273,7 @@ C
             NN = NI - NSN
             STIF(I)=ABS(STIFI(NIN)%P(NN))
           END IF
+          !ISTF = 3: Interface stiffness is the maximum of the main and secondary stiffness.
           STIF(I)=MAX(STF(L),STIF(I))
           STIF(I)=MAX(KMIN,MIN(STIF(I),KMAX))
          ENDDO
@@ -284,6 +287,7 @@ C
             NN = NI - NSN
             STIF(I)=ABS(STIFI(NIN)%P(NN))
           END IF
+          !ISTF = 3: Interface stiffness is the minimum of the main and secondary stiffness.
           STIF(I)=MIN(STF(L),STIF(I))
           STIF(I)=MAX(KMIN,MIN(STIF(I),KMAX))
          ENDDO

@@ -217,7 +217,7 @@ C--------------------------------------------------------
       ELSE
 C
        DO I=1,JLT
-C
+C     Vector from segment center to segment corner nodes
         X01(I) = X1(I) - X0(I)
         Y01(I) = Y1(I) - Y0(I)
         Z01(I) = Z1(I) - Z0(I)
@@ -233,11 +233,11 @@ C
         X04(I) = X4(I) - X0(I)
         Y04(I) = Y4(I) - Y0(I)
         Z04(I) = Z4(I) - Z0(I)
-C
+C     Vector from secondary node to segment center
         XI0 = X0(I) - XI(I)
         YI0 = Y0(I) - YI(I)
         ZI0 = Z0(I) - ZI(I)
-C
+C     Vector from secondary node to segment corner nodes
         XI1(I) = X1(I) - XI(I)
         YI1(I) = Y1(I) - YI(I)
         ZI1(I) = Z1(I) - ZI(I)
@@ -252,8 +252,8 @@ C
 C
         XI4(I) = X4(I) - XI(I)
         YI4(I) = Y4(I) - YI(I)
-        ZI4(I) = Z4(I) - ZI(I)
-C
+        ZI4(I) = Z4(I) - ZI(I)      
+C     Norm by cross products of point vectors
         SX1 = YI0*ZI1(I) - ZI0*YI1(I)
         SY1 = ZI0*XI1(I) - XI0*ZI1(I)
         SZ1 = XI0*YI1(I) - YI0*XI1(I)
@@ -265,9 +265,11 @@ C
         SX0 = Y01(I)*Z02(I) - Z01(I)*Y02(I)
         SY0 = Z01(I)*X02(I) - X01(I)*Z02(I)
         SZ0 = X01(I)*Y02(I) - Y01(I)*X02(I)
+C     Magnitute surface norm        
         S2 = ONE/MAX(EM30,SX0*SX0 + SY0*SY0 + SZ0*SZ0)
-C
+C     scalar coefficient: SX2 = SX2 dot SX0 / ||SX0||^2
         LB1(I) = -(SX0*SX2 + SY0*SY2 + SZ0*SZ2) * S2
+C     scalar coefficient: SX1 = SX1 dot SX0 / ||SX0||^2
         LC1(I) =  (SX0*SX1 + SY0*SY1 + SZ0*SZ1) * S2
 C
         SX3 = YI0*ZI3(I) - ZI0*YI3(I)
@@ -278,8 +280,9 @@ C
         SY0 = Z02(I)*X03(I) - X02(I)*Z03(I)
         SZ0 = X02(I)*Y03(I) - Y02(I)*X03(I)
         S2 = ONE/MAX(EM30,SX0*SX0 + SY0*SY0 + SZ0*SZ0)
-C
+C     scalar coefficient:  SX3 = SX3 dot SX0 / |SX0|
         LB2(I) = -(SX0*SX3 + SY0*SY3 + SZ0*SZ3) * S2
+C     scalar coefficient:  SX2 = SX2 dot SX0 / |SX0|
         LC2(I) =  (SX0*SX2 + SY0*SY2 + SZ0*SZ2) * S2
 C
         SX4 = YI0*ZI4(I) - ZI0*YI4(I)
@@ -290,38 +293,73 @@ C
         SY0 = Z03(I)*X04(I) - X03(I)*Z04(I)
         SZ0 = X03(I)*Y04(I) - Y03(I)*X04(I)
         S2 = ONE/MAX(EM30,SX0*SX0 + SY0*SY0 + SZ0*SZ0)
-C
+C     scalar coefficient:   SX4 = SX4 dot SX0 / |SX0|
         LB3(I) = -(SX0*SX4 + SY0*SY4 + SZ0*SZ4) * S2
+C     scalar coefficient:   SX3 = SX3 dot SX0 / |SX0|
         LC3(I) =  (SX0*SX3 + SY0*SY3 + SZ0*SZ3) * S2
 C
         SX0 = Y04(I)*Z01(I) - Z04(I)*Y01(I)
         SY0 = Z04(I)*X01(I) - X04(I)*Z01(I)
         SZ0 = X04(I)*Y01(I) - Y04(I)*X01(I)
         S2 = ONE/MAX(EM30,SX0*SX0 + SY0*SY0 + SZ0*SZ0)
-C
+C     scalar coefficient:   SX1 = SX1 dot SX0 / |SX0|
         LB4(I) = -(SX0*SX1 + SY0*SY1 + SZ0*SZ1) * S2
+C     scalar coefficient:   SX4 = SX4 dot SX0 / |SX0|
         LC4(I) =  (SX0*SX4 + SY0*SY4 + SZ0*SZ4) * S2
-C
+        go to 100 !SKIP DEBUG OUTPUT
+        write(*,*)
+        write(*,*) "LB1", LB1(I)
+        write(*,*) "LB2", LB2(I)
+        write(*,*) "LB3", LB3(I)
+        write(*,*) "LB4", LB4(I)
+        
+        write(*,*)
+        write(*,*) "LC1", LC1(I)
+        write(*,*) "LC2", LC2(I)
+        write(*,*) "LC3", LC3(I)
+        write(*,*) "LC4", LC4(I)
+100     continue
+C     AAA = Scalar of vector Y0i, Weighted Values HLC1(I) and HLB4(I), dot product AL1(I) that is clamped between 0 and 1
         AAA    = ONE/MAX(EM30,X01(I)*X01(I)+Y01(I)*Y01(I)+Z01(I)*Z01(I))
         HLC1(I)= LC1(I)*ABS(LC1(I))*AAA
         HLB4(I)= LB4(I)*ABS(LB4(I))*AAA
         AL1(I) = -(XI0*X01(I)+YI0*Y01(I)+ZI0*Z01(I))*AAA
         AL1(I) = MAX(ZERO,MIN(ONE,AL1(I)))
+C     
         AAA    = ONE/MAX(EM30,X02(I)*X02(I)+Y02(I)*Y02(I)+Z02(I)*Z02(I))
         HLC2(I)= LC2(I)*ABS(LC2(I))*AAA
         HLB1(I)= LB1(I)*ABS(LB1(I))*AAA
         AL2(I) = -(XI0*X02(I)+YI0*Y02(I)+ZI0*Z02(I))*AAA
         AL2(I) = MAX(ZERO,MIN(ONE,AL2(I)))
+C     
         AAA    = ONE/MAX(EM30,X03(I)*X03(I)+Y03(I)*Y03(I)+Z03(I)*Z03(I))
         HLC3(I)= LC3(I)*ABS(LC3(I))*AAA
         HLB2(I)= LB2(I)*ABS(LB2(I))*AAA
         AL3(I) = -(XI0*X03(I)+YI0*Y03(I)+ZI0*Z03(I))*AAA
         AL3(I) = MAX(ZERO,MIN(ONE,AL3(I)))
+C             
         AAA    = ONE/MAX(EM30,X04(I)*X04(I)+Y04(I)*Y04(I)+Z04(I)*Z04(I))
         HLC4(I)= LC4(I)*ABS(LC4(I))*AAA
         HLB3(I)= LB3(I)*ABS(LB3(I))*AAA
         AL4(I) = -(XI0*X04(I)+YI0*Y04(I)+ZI0*Z04(I))*AAA
         AL4(I) = MAX(ZERO,MIN(ONE,AL4(I)))
+        go to 101 !SKIP DEBUG OUTPUT   
+        write(*,*)
+        write(*,*) "HLC1", HLC1(I)
+        write(*,*) "HLC1", HLC3(I)
+        write(*,*) "HLC1", HLC3(I)
+        write(*,*) "HLC1", HLC4(I)
+        write(*,*)
+        write(*,*) "HLB1", HLB1(I)
+        write(*,*) "HLB1", HLB2(I)
+        write(*,*) "HLB1", HLB3(I)
+        write(*,*) "HLB1", HLB4(I)
+        write(*,*)
+        write(*,*) "AL1", AL1(I)
+        write(*,*) "AL2", AL2(I)
+        write(*,*) "AL3", AL3(I)
+        write(*,*) "AL4", AL4(I)
+101     continue
 C
        ENDDO
 C
@@ -415,14 +453,29 @@ C
          LC4(I) = ZERO
          LB4(I) = AL4(I)
         ENDIF
-       ENDDO
-
+      ENDDO
+      
 C
 C
 C
 C
        DO I=1,JLT
+        go to 102 !SKIP DEBUG OUTPUT
+        write(*,*)
+        write(*,*) "NODE:", I
 C
+        write(*,*)
+        write(*,*) "LB1", LB1(I)
+        write(*,*) "LB2", LB2(I)
+        write(*,*) "LB3", LB3(I)
+        write(*,*) "LB4", LB4(I)
+        
+        write(*,*)
+        write(*,*) "LC1", LC1(I)
+        write(*,*) "LC2", LC2(I)
+        write(*,*) "LC3", LC3(I)
+        write(*,*) "LC4", LC4(I)
+102     continue
         NX1(I) = XI(I)-(X0(I) + LB1(I)*X01(I) + LC1(I)*X02(I))
         NY1(I) = YI(I)-(Y0(I) + LB1(I)*Y01(I) + LC1(I)*Y02(I))
         NZ1(I) = ZI(I)-(Z0(I) + LB1(I)*Z01(I) + LC1(I)*Z02(I))
@@ -450,6 +503,21 @@ C !!!!!!!!!!!!!!!!!!!!!!!
 C  PENE = GAP^2 - DIST^2 USED TO TEST IF NON-NULL
 C!!!!!!!!!!!!!!!!!!!!!!!!
         PENE(I) = MAX(D1,D2,D3,D4)
+        go to 103 !SKIP DEBUG OUTPUT
+        write(*,*)
+        write(*,*) "Node:", I
+        
+        write(*,*) "P1",sqrt(P1(I))
+        write(*,*) "P2",sqrt(P2(I))
+        write(*,*) "P3",sqrt(P3(I))
+        write(*,*) "P4",sqrt(P4(I))      
+        write(*,*) "****"
+        write(*,*) "D1",D1
+        write(*,*) "D2",D2
+        write(*,*) "D3",D3
+        write(*,*) "D4",D4 
+        write(*,*) "PENE",PENE(I)
+103     continue  
 C
        ENDDO
       ENDIF

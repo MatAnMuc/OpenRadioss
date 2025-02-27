@@ -85,7 +85,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      I                   WIGE           ,KNOT        ,IGEO           ,MULTI_FVM        ,H3D_DATA   ,
      J                   INTBUF_FRIC_TAB,KNOTLOCPC   ,KNOTLOCEL      ,ITASK            ,TAGNCONT   ,
      K                   KLOADPINTER    ,LOADPINTER  ,LOADP_HYD_INTER,DGAPLOADINT      ,S_LOADPINTER,
-     L                   INTEREFRIC     ,S_XCELL_REMOTE,XCELL_REMOTE )
+     L                   INTEREFRIC     ,S_XCELL_REMOTE,XCELL_REMOTE, IGRSURF)
 C======================================================================
 C-----------------------------------------------
 C   M o d u l e s
@@ -132,6 +132,7 @@ C-----------------------------------------------
       TYPE(OUTPUT_), INTENT(INOUT) :: OUTPUT
       TYPE(t_ale_connectivity), INTENT(IN) :: ALE_CONNECTIVITY
       TYPE (ELBUF_STRUCT_), DIMENSION(NGROUP) :: ELBUF_TAB
+      TYPE(SURF_)   ,DIMENSION(NSURF)   :: IGRSURF
       INTEGER NELTST,ITYPTST,NIN,NEWFRONT,NSTRF(*),NRTMDIM, IAD17, ISENSINT(*),DIMFB,IGROUPS(NUMELS)
       INTEGER IPARI(NPARI,NINTER), ICODT(*),ICONTACT(*),ITAB(*), ISKY(*), KINET(*),IPARG(NPARG,*),TAGNCONT(NLOADP_HYD_INTER,NUMNOD)
       INTEGER NB_JLT,NB_JLT_NEW,NB_STOK_N,JTASK,NISKYFI, LINDMAX,ITASK
@@ -161,6 +162,20 @@ C-----------------------------------------------
       TYPE (GROUP_)  , DIMENSION(NGRBRIC) :: IGRBRIC
 C-----------------------------------------------
 C     N E W   V a r i a b l e s
+C-----------------------------------------------
+      INTEGER, PARAMETER :: MAX_STS_SIZE = 1
+      my_real CONT_ELEMENT(MAX_STS_SIZE,3,8) !contact element array
+      my_real load_arr(MAX_STS_SIZE,8,4) !load array
+      INTEGER CAND_SEC_SEG_ID(MAX_STS_SIZE,5) !secondary segment nodes
+      INTEGER CAND_MST_SEG_ID(MAX_STS_SIZE,5) !primary segment nodes
+      INTEGER CAND_SEC_SEG(MAX_STS_SIZE) !secondary segment nodes
+      INTEGER node_id_load(MAX_STS_SIZE*8) !node id array (8 nodes per element)
+      INTEGER COUNT !count for the number of contact elements found
+      INTEGER ASS_FLAG !Assembly flag, 0 if old Assembly, 1 if new assembly algorithm called
+      INTEGER :: MAX_STS_SIZE_ACTUAL !actual calculated sts array size needed      
+      INTEGER OPTION !option for the contact algorithm
+      INTEGER IMPACT_glob !global impact flag, 0 if no impact, 1 if impact
+      LOGICAL :: STS_ACTIVE !true if STS is active, false if NTS is active
 C-----------------------------------------------
       my_real, DIMENSION(:,:,:), ALLOCATABLE :: CONT_ELEMENT  !contact element array
       my_real, DIMENSION(:,:,:), ALLOCATABLE :: load_arr     !load array
@@ -213,8 +228,8 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
-      INTEGER I, J, I_STOK, JLT_NEW, JLT , NFT, IVIS2,
-     .        IBC,  ISECIN, IBAG, IADM,
+      INTEGER I, J, K, L, I_STOK, JLT_NEW, JLT , NFT, IVIS2,
+     .        IBC,  NSEG, ISECIN, IBAG, IADM,
      .        IGAP, INACTI, IFQ, MFROT, IGSTI, NISUB, ITIED,
      .        JLT_TIED, NB_LOC, I_STOK_LOC,DEBUT,
      .        ILAGM, LENR, LENT, MAXCC,INTTH,IFORM, H, IERROR,
@@ -283,6 +298,13 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
+      STS_ACTIVE = .TRUE. ! Set to FALSE to use old NTS algorithm
+      IF (STS_ACTIVE) THEN
+        ASS_FLAG = 2  ! New STS assembly algorithm
+      ELSE
+        ASS_FLAG = 0  ! Old NTS assembly algorithm
+      ENDIF
+      
       TYPE18 = .FALSE.
       NRTM = IPARI(4,NIN)
       NSN = IPARI(5,NIN)
@@ -307,7 +329,7 @@ C heat interface
       IFORM = IPARI(48,NIN)
       IRSTH = IPARI(42,NIN)
 C adaptive meshing
-      IADM = IPARI(44,NIN)
+      IADM = IPARI(44,NIN) 
       NRADM = IPARI(49,NIN)
       PADM = INTBUF_TAB%VARIABLES(24)
       ANGLT = INTBUF_TAB%VARIABLES(25)
@@ -341,14 +363,14 @@ C adaptive meshing
         DRAD  = INTBUF_TAB%VARIABLES(32)
         DRAD2 = DRAD*DRAD
       ENDIF
-
+      
 C--- Corresponding Friction model  
       INTFRIC=IPARI(72,NIN)
       IORTHFRIC = 0
       NSETPRTS = 0
       NPARTFRIC = 0 
       XFILTR_FRIC = ZERO
-      
+
       IF(INTFRIC /= 0) THEN 
          TABCOUPLEPARTS_FRIC => INTBUF_FRIC_TAB(INTFRIC)%TABCOUPLEPARTS_FRIC
          TABCOEF_FRIC => INTBUF_FRIC_TAB(INTFRIC)%TABCOEF_FRIC
@@ -574,16 +596,23 @@ c------------------------------------------------
            CALL ARRET(2)
           ENDIF
         ENDIF
-        
-        !--------------------------------------------------------
+
+       !--------------------------------------------------------
         ! FORCE COMPUTATION : 
         !    inter 7 & inter 18
         !--------------------------------------------------------
 C!$OMP ORDERED
         DO NFT = 0 , I_STOK - 1 , NVSIZ
           JLT = MIN( NVSIZ, I_STOK - NFT )
-          ! preparing retained candidates
+!--------------------------------------------------------
+! Initialize candidate data
+!--------------------------------------------------------
+
           CALL I7CDCOR3(JLT,INDEX2(NFT+1),INTBUF_TAB%CAND_E,INTBUF_TAB%CAND_N,CAND_E_N,CAND_N_N)
+
+!--------------------------------------------------------
+! Coordinate transformation and preparation for contact analysis
+!--------------------------------------------------------
           ! cand_n & cand_e replaced with cand_n_n & cand_e_n
           CALL I7COR3(
      1  JLT       ,X       ,INTBUF_TAB%IRECTM,INTBUF_TAB%NSV,CAND_E_N,
@@ -623,7 +652,7 @@ C!$OMP ORDERED
      C        INDEX2(NFT+1) ,VXI       ,VYI               ,ITAB                       ,XCELL                      ,
      D        VZI           ,MSI       ,KINI              ,
      E        IGAP          ,MULTI_FVM ,S_XCELL_REMOTE ,XCELL_REMOTE)
-
+ 
             IF( MULTI_FVM%IS_INT18_LAW151 ) THEN
               MSI_APPEND(1:MVSIZ) = ZERO
               MSI_APPEND(MVSIZ+1:2*MVSIZ) = MSI(1:MVSIZ)
@@ -839,7 +868,11 @@ C==========================================================
      L        IREP_FRICMI  ,DIR_FRICMI,DGAPLOADP)
 
             JLT = JLT_NEW
-            IF (IMONM > 0 .AND. JTASK == 1) CALL STARTIME(TIMERS,20)
+            
+            !DEBUG
+            !IF (JLT_NEW==0) write(*,*) "NO IMPACT FOUND WITH NTS"
+            
+            IF (IMONM > 0 .AND. JTASK == 1) CALL STARTIME(TIMERS,20)    
             IF(JLT_NEW /= 0) THEN
               IPARI(29,NIN) = 1
               IF (DEBUG(3)>=1) NB_JLT_NEW = NB_JLT_NEW + JLT_NEW
@@ -874,7 +907,10 @@ C==========================================================
             ENDIF
             IF(ITASK==1) CALL STOPTIME(TIMERS,MACRO_TIMER_FRIC)
 
-              CALL I7FOR3(OUTPUT,
+    !--------------------------------------------------------
+    ! FORCE
+    !--------------------------------------------------------
+                CALL I7FOR3(OUTPUT,
      1  JLT          ,A         ,V            ,IBC         ,ICODT    ,
      2  FSAV         ,GAP       ,FRIC         ,MS          ,VISC     ,
      3  VISCF        ,NOINT     ,INTBUF_TAB%STFNS,ITAB     ,CN_LOC   ,
@@ -917,8 +953,8 @@ C==========================================================
      9  KLOADPINTER  ,LOADPINTER ,LOADP_HYD_INTER,INTBUF_TAB%TYPSUB    ,  
      .                                            INTBUF_TAB%INFLG_SUBS,
      A  INTBUF_TAB%INFLG_SUBM,NINLOADP,DGAPLOADINT,S_LOADPINTER,DGAPLOADP,
-     B  INTEREFRIC   )
-
+     B  INTEREFRIC   )        
+            
               IF( INTTH > 0 ) THEN 
                  CALL I7THERM(JLT   ,IPARG ,PM  ,IXS   ,IFORM ,X      ,   
      1                        XI    ,YI    ,ZI  ,X1   ,Y1    ,Z1      ,
@@ -932,7 +968,7 @@ C==========================================================
      8                        H4    ,theaccfact)      
               ENDIF
 
-      CALL I7ASS33(
+              CALL I7ASS33(
      1  JLT       ,A         ,NOINT     ,ITAB      ,STIFN     ,
      2 STIF      ,FSKYI      ,ISKY      ,FCONT     ,IX1       ,
      3  IX2       ,IX3       ,IX4       ,NSVG      ,NELTST    ,
@@ -950,10 +986,18 @@ C==========================================================
      F  CONDN     ,CONDINT   ,CONDNSKYI ,IXIG3D    ,KXIG3D    ,
      J  WIGE      ,KNOT      ,IGEO      ,INTBUF_TAB%NIGE      ,
      K  INTBUF_TAB%RIGE      ,X         ,H3D_DATA  ,KNOTLOCPC ,
-     L  KNOTLOCEL ,IFORM     ,NODADT_THERM) 
+     L  KNOTLOCEL ,IFORM     ,NODADT_THERM, ASS_FLAG, load_arr, node_id_load, L, MAX_STS_SIZE_ACTUAL ) 
+
+        !WRITE(*,*) 
+        !WRITE(*,*) "BALANCE PRIMARY-SECONDARY:", 
+        !&       sum(FZ1(1:JLT))+sum(FZ2(1:JLT))+sum(FZ3(1:JLT))+sum(FZ4(1:JLT))-sum(FZI(1:JLT))
 
            ENDIF !(JLT_NEW/=0) THEN
       ELSE !STS_ACTIVE = .TRUE.
+C==========================================================
+C NEW STS ALGORITHM - UNIFIED FOR GAUSS AND LOBATTO
+C==========================================================
+
 C==========================================================
 C NEW STS ALGORITHM - UNIFIED FOR GAUSS AND LOBATTO
 C==========================================================
@@ -1090,7 +1134,7 @@ C
 C-----------------------------------------------
 C
           IF (IMONM > 0 .AND. JTASK == 1) CALL STOPTIME(TIMERS,20)
-          IF(IMPL_S = =1) THEN
+          IF(IMPL_S == 1) THEN
             DO I = 1 ,JLT_NEW
              NS_IMP(I+NUM_IMP)=CN_LOC(I)
              NE_IMP(I+NUM_IMP)=CE_LOC(I)
@@ -1126,5 +1170,5 @@ C       I7KGLO = 1 => mis ds inttri
       ENDIF
 C
       RETURN
-      END
+         END
 
