@@ -51,7 +51,7 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
-      INTEGER NIN,ITASK,
+      INTEGER NIN,ITASK,  
      .        IPARI(NPARI,NINTER)
 C     REAL
       my_real 
@@ -69,8 +69,18 @@ C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
 C
-      NSN   =IPARI(5,NIN)
-      NMN   =IPARI(6,NIN)
+      ! NOTE: There is a potential data consistency issue here.
+      !        NSN (number of secondary nodes) is currently assigned from IPARI(5,NIN),
+      !        but maybe this value may not be correctly up-to-dated for STS.
+      !        Alternatively, INTBUF_TAB%S_NSV may contain the required value,
+      !        and potentially replace:
+      !            NSN = IPARI(5,NIN)
+      !        with:
+      !            NSN = INTBUF_TAB%S_NSV
+      !        Review related code for correct indexing may need to be done.
+      NSN   = IPARI(5,NIN)
+      !NSN   = INTBUF_TAB%S_NSV
+      NMN   = IPARI(6,NIN)
 C
       STARTT=INTBUF_TAB%VARIABLES(3)
       STOPT =INTBUF_TAB%VARIABLES(11)

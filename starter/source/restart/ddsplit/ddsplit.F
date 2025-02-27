@@ -337,7 +337,8 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      E   DRAPEG       ,USER_WINDOWS,OUTPUT          ,INTERFACES  ,NUMBER_LOAD_CYL,
      F   LOADS_PER_PROC, PYTHON    ,DPL0CLD         ,VEL0CLD     ,NAMES_AND_TITLES,
      G   BCS_PER_PROC,constraint_struct,glob_therm  ,PBLAST      ,RWSTIF_PEN,SLN_PEN,
-     H   IN_SFEM     , NE_SFEM )
+     H   IN_SFEM     , NE_SFEM,  NKQ1NP         ,KQ1NP_TAB    ,IQ1NP_TAB      ,IQ1NP_BULK_TAB,
+     I   Q1NP_WTAB      ,Q1NP_KTAB    ,Q1NP_CPTAB)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -364,6 +365,7 @@ C-----------------------------------------------
       USE GROUPDEF_MOD
       USE MID_PID_MOD
       USE FAILWAVE_MOD
+      USE Q1NP_RESTART_MOD
       USE NLOCAL_REG_MOD
       USE SKEW_MOD
       USE SPLIT_CFD_MOD
@@ -409,6 +411,7 @@ C   C o m m o n   B l o c k s
 C-----------------------------------------------
 #include      "com01_c.inc"
 #include      "com04_c.inc"
+#include      "units_c.inc"
 #include      "com10_c.inc"
 #include      "com_xfem1.inc"
 #include      "eigcom.inc"
@@ -510,6 +513,13 @@ C-----------------------------------------------
       INTEGER, DIMENSION(2,NPART), INTENT(IN) :: POIN_PART_SHELL,POIN_PART_TRI
       INTEGER, DIMENSION(2,NPART,7), INTENT(IN) :: POIN_PART_SOL
       INTEGER :: NBR_TH_MONVOL ! number of /TH/MONV
+      INTEGER, INTENT(IN) :: NKQ1NP
+      INTEGER, INTENT(IN) :: KQ1NP_TAB(NKQ1NP,*)
+      INTEGER, INTENT(IN) :: IQ1NP_TAB(*)
+      INTEGER, INTENT(IN) :: IQ1NP_BULK_TAB(*)
+      my_real, INTENT(IN) :: Q1NP_WTAB(*)
+      my_real, INTENT(IN) :: Q1NP_KTAB(*)
+      my_real, INTENT(IN) :: Q1NP_CPTAB(3,*)
 
       DOUBLE PRECISION
      .        BUFGEO(*)
@@ -2725,6 +2735,15 @@ C--------------------------------------
 C     Isogeo                                      
 C--------------------------------------
       IF (NUMELIG3D>0) CALL W_ELIG3D(KXIG3D,NUMELIG3D,ISUMNIG3D_L,IXIG3D,P-1,NODLOCAL,LEN_IA)
+
+      IF (NUMELQ1NP_G  > 0) THEN
+C Informational message for Q1Np restart content
+        WRITE(IOUT,'(A,I10,A,I10)') 
+     .    ' ** Q1Np INT arrays: NKQ1NP=', NKQ1NP,
+     .    ' NUMELQ1NP=', NUMELQ1NP_G 
+        CALL W_Q1NP_INT(NUMELQ1NP_G ,NKQ1NP,KQ1NP_TAB,
+     .                  IQ1NP_TAB,IQ1NP_BULK_TAB,LEN_IA)
+      ENDIF
 C--------------------------------------
 C TAG_SKINS6 : used for /H3D/STRESS/TENS/OUTER
 C--------------------------------------
@@ -2743,6 +2762,12 @@ C--------------------------------------
       LEN_AM = 0
       CALL WRITE_DB(TABVREA, LVARREA)
       LEN_AM = LEN_AM + LVARREA
+
+      IF (NUMELQ1NP_G  > 0) THEN
+C Q1Np real restart payloads (weights, knots, control pts)
+        CALL W_Q1NP_REAL(Q1NP_WTAB,Q1NP_KTAB,Q1NP_CPTAB,LEN_AM)
+      ENDIF
+
 C--------------------------------------------
 C X, D, V, VR, DR
 C--------------------------------------------

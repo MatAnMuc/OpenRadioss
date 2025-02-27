@@ -145,7 +145,7 @@ C
      .                MSGTYPE=MSGERROR,
      .                ANMODE=ANINFO,
      .                I1=NGL(I))
-        ENDIF
+      ENDIF
       ENDDO
 C
       IF (JEUL == 0 .AND. NXREF == 0) RETURN
