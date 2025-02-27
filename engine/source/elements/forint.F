@@ -86,6 +86,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    sfem_mod                ../common_source/modules/elements/sfem_mod.F90
 !||    table_mod               ../engine/share/modules/table_mod.F
 !||    timer_mod               ../engine/source/system/timer_mod.F90
+!||    Q1NP_FORC3                    source/elements/solid/solid_q1np/q1np_forc3.F
 !||====================================================================
       SUBROUTINE FORINT(TIMERS, PYTHON, 
      1    PM        ,GEO       ,X          ,A         ,AR        ,
@@ -147,6 +148,9 @@ C-----------------------------------------------
       USE PRELOAD_SOLID_INI_MOD
       USE S6ZFORC3_MOD
       use element_mod , only : nixs,nixq,nixt,nixr,nixp
+      USE RESTMOD, ONLY: IQ1NP_TAB, IQ1NP_BULK_TAB, KQ1NP_TAB,
+     .                   Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB
+      USE Q1NP_RESTART_MOD
       use sfem_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
@@ -1223,6 +1227,23 @@ C
                ENDDO
             ENDIF
           ENDIF
+C----6---------------------------------------------------------------7---------8
+C     Q1Np enriched elements processing
+C----6---------------------------------------------------------------7---------8
+!          IF (NUMELQ1NP_G > 0 .AND. ITY == 1 .AND. JLAG == 1) THEN
+!     TEMPORARILY DISABLED FOR DEBUGGING PURPOSES
+!            IF (ALLOCATED(KQ1NP_TAB) .AND. ALLOCATED(IQ1NP_TAB)) THEN
+!              CALL Q1NP_FORC3(
+!     1        ELBUF_TAB(NG),PM           ,GEO      ,X         ,           
+!     2        A          ,V            ,MS       ,                       
+!     3        VEUL         ,FV       ,ALE_CONNECT     ,IPARG      ,                     
+!     4        TF       ,NPC      ,BUFMAT    ,PARTSAV    ,             
+!     5        STIFN        ,FSKY     ,IADS     ,OFFSET    ,IPARTS(NF1),           
+!     6        NEL          ,DT2T     ,NELTST   ,ITYPTST   ,IPM        ,           
+!     7        ITASK        ,GRESAV   ,GRTH     ,IGRTH(NF1),MSSA(NF1)  ,           
+!     8        DMELS(NF1)   ,TABLE,IPRI     ,MAT_ELEM,NG           )     
+!            ENDIF
+!          ENDIF
 C----6---------------------------------------------------------------7---------8
         ELSEIF(ITY==2.AND.JMULT==0.AND.JLAG==1.AND.
      .         ICRACK==0) THEN

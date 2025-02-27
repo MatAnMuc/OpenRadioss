@@ -71,7 +71,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      .                  XREFS    ,NPF      ,TF     ,MSSA    ,STRSGLOB,
      .                  STRAGLOB ,FAIL_INI ,SPBUF  ,KXSP    ,IPARTSP ,
      .                  NOD2SP   ,SOL2SPH  ,IRST   ,ILOADP  ,FACLOAD ,
-     .                  RNOISE   ,PERTURB  ,MAT_PARAM,GLOB_THERM)
+     .                  RNOISE   ,PERTURB  ,MAT_PARAM,GLOB_THERM, STI_CURRENT)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -167,6 +167,10 @@ C-----------------------------------------------
      .   ZD1(MVSIZ), ZD2(MVSIZ), ZD3(MVSIZ), ZD4(MVSIZ),
      .   ZD5(MVSIZ), ZD6(MVSIZ), ZD7(MVSIZ), ZD8(MVSIZ)     
       my_real :: TEMPEL(NEL)
+C-----------------------------------------------
+C     L o c a l   V a r i a b l e s
+C-----------------------------------------------
+      my_real :: m1, m2, SLSFAC, SFS, STI_NEW, STI_CURRENT
 C-----------------------------------------------
       CHARACTER(LEN=NCHARTITLE)::TITR1
 C
@@ -374,6 +378,7 @@ C
         CALL SBOLTINI(E1X  ,E1Y  ,E1Z  ,E2X  ,E2Y  ,E2Z  ,E3X  ,E3Y  ,E3Z  ,
      1                GBUF%BPRELD,NEL  ,IXS  ,NIXS ,VPRELOAD, IFLAG_BPRELOAD)
       ENDIF
+      STI_CURRENT = 1E30
 C----------------------------------------
 C Thermal and Turbulence initialization
 C----------------------------------------
@@ -506,7 +511,16 @@ C       STI = 0.25 * RHO * VOL / (DT*DT)
         STIFN(IXS(7,I+NFT))=STIFN(IXS(7,I+NFT))+STI
         STIFN(IXS(8,I+NFT))=STIFN(IXS(8,I+NFT))+STI
         STIFN(IXS(9,I+NFT))=STIFN(IXS(9,I+NFT))+STI
-      ENDDO
+        
+        SLSFAC = 1.0
+        SFS = 1.0
+        m1 = GBUF%FILL(I) * GBUF%RHO(I) * VOLU(I)
+
+        STI_NEW = 0.25 * SLSFAC * SFS * m1 / MAX(EM20, DTX(I) * DTX(I))
+        IF (STI_NEW < STI_CURRENT) THEN
+            STI_CURRENT = STI_NEW
+        END IF
+      ENDDO    
 C--------------------------------------------------------
 C Solid to SPH : compute particles initial volume and mass
 C--------------------------------------------------------

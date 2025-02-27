@@ -85,13 +85,13 @@ C
         DO I=1,NSN
           J=NSV(I)
           IF(STFN(I)/=ZERO) THEN
-
-            XSLV(1)=MAX(XSLV(1),X(1,J)-XSAV(1,I))
-            XSLV(2)=MAX(XSLV(2),X(2,J)-XSAV(2,I))
-            XSLV(3)=MAX(XSLV(3),X(3,J)-XSAV(3,I))
-            XSLV(4)=MIN(XSLV(4),X(1,J)-XSAV(1,I))
-            XSLV(5)=MIN(XSLV(5),X(2,J)-XSAV(2,I))
-            XSLV(6)=MIN(XSLV(6),X(3,J)-XSAV(3,I))
+       
+            XSLV(1)=MAX(XSLV(1),X(1,J)-XSAV(1,I)) !MAX(X)
+            XSLV(2)=MAX(XSLV(2),X(2,J)-XSAV(2,I)) !MAX(Y)
+            XSLV(3)=MAX(XSLV(3),X(3,J)-XSAV(3,I)) !MAX(Z)
+            XSLV(4)=MIN(XSLV(4),X(1,J)-XSAV(1,I)) !MIN(X)
+            XSLV(5)=MIN(XSLV(5),X(2,J)-XSAV(2,I)) !MIN(Y)
+            XSLV(6)=MIN(XSLV(6),X(3,J)-XSAV(3,I)) !MIN(Z)         
 
             VSLV(1)=MAX(VSLV(1),V(1,J))
             VSLV(2)=MAX(VSLV(2),V(2,J))

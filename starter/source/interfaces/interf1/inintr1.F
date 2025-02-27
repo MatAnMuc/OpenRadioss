@@ -31,7 +31,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    i7stsecnd       ../starter/source/interfaces/inter3d1/i7stslav.F
 !||--- uses       -----------------------------------------------------
 !||====================================================================
-      SUBROUTINE ININTR1(IPARI   ,STIFINT, INTBUF_TAB ,STFAC)
+      SUBROUTINE ININTR1(IPARI   ,STIFINT, INTBUF_TAB ,STFAC, STIF_STS)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -60,6 +60,7 @@ C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
       INTEGER N
       INTEGER NTY, IGSTI
+      my_real STIF_STS
 C
       IF(N2D/=0)RETURN
 C
@@ -67,9 +68,10 @@ C
        NTY=IPARI(7,N)
        IF (NTY==7.OR.NTY==22)THEN
          IGSTI=IPARI(34,N)
+         !Interface stiffness definition flag
          IF(IGSTI>1)THEN
            CALL I7STSECND(
-     1      IPARI(1,N),STIFINT,INTBUF_TAB(N))
+     1      IPARI(1,N),STIFINT,INTBUF_TAB(N), STIF_STS)
          ENDIF
        ELSEIF (NTY==20)THEN
          CALL I20STIFN(IPARI(1,N),STIFINT,INTBUF_TAB(N))

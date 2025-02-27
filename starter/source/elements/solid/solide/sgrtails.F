@@ -63,6 +63,7 @@ C-----------------------------------------------
       USE NAMES_AND_TITLES_MOD , ONLY : NCHARTITLE
       USE ALE_MOD , ONLY : ALE
       use element_mod , only : nixs
+      USE Q1NP_RESTART_MOD
 C-----------------------------------------------
 C            A R G U M E N T S
 C-----------------------------------------------
@@ -122,13 +123,13 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   L O C A L   V A R I A B L E S
 C-----------------------------------------------
-      INTEGER 
+      INTEGER  
      .   NGR1, MLN, NG, ISSN, ISSN_, N, MID, PID, II,ILOC,IL,NEL, NE1,IREP,IINT,
      .   P, NEL_PREC, IGT, JHBE, I, IKSNOD0,NB,IEOS,NLAY,
      .   MODE, WORK(70000), NN, J, NPTR,NPTS,NPTT,NPG,
      .   IPLAST,NUVARP, INEG, JIVF,ICPRE,ICSTR,
      .   IFAIL,IMATVIS,NLY,NL,ILAW,IM,IPMAT,ITET4,ITET10,
-     .   NGP(NSPMD+1),JJ,IFAILMODEL,NFAIL,ISVIS,IVISC,IMAT,
+     .   NGP(NSPMD+1),NGP_START(NSPMD+1),JJ,IFAILMODEL,NFAIL,ISVIS,IVISC,IMAT,
      .   INUM_R2R(1+R2R_SIU*NUMELS),IPARTSPH,IPARTR2R,MFT,IBOLTP,ICP0,ISM0,
      .   IPERT,STAT,ITSH,IT10,ICPT10,JALE_FROM_MAT,JALE_FROM_PROP,IDAMP_FREQ_RANGE,
      .   IEL_Q1NP,IEL_Q1NP_FOUND,TOTAL_EL
@@ -148,6 +149,25 @@ C-----------------------------------------------
 C--------------------------------------------------------------
 C         GROUPING BY MVSIZ GROUPS
 C--------------------------------------------------------------
+
+      IF (IDEBUG_Q1NP_GROUP > 0) THEN
+        WRITE(*,*) ''
+        WRITE(*,*) '=============================================='
+        WRITE(*,*) 'SGRTAILS: Checking Q1NP elements'
+        WRITE(*,*) '=============================================='
+        WRITE(*,*) 'Variable descriptions:'
+        WRITE(*,*) '  DD_IAD range: Start and end indices for domain decomposition'
+        WRITE(*,*) '  NE1: Number of elements in current group'
+        WRITE(*,*) '  NEL: Total elements for processor in super-group'
+        WRITE(*,*) '  NEL_PREC: Number of elements processed before current group'
+        WRITE(*,*) '  NFT: First element index offset (0-based)'
+        WRITE(*,*) '  NPT_R/NPT_S/NPT_T: Number of Gauss points in R/S/T directions'
+        WRITE(*,*) '  Total: Total number of Gauss points (NPT_R * NPT_S * NPT_T)'
+        WRITE(*,*) '  Proc: Processor number (0-based)'
+        WRITE(*,*) '  Super-group: Collection of groups with similar properties'
+        WRITE(*,*) ''
+      ENDIF
+
       CALL MY_ALLOC(INDEXS2,NUMELS)
       nullify(MATPARAM)
       INDEXS2(1:NUMELS)=PERMUTATION%SOLID(1:NUMELS)
@@ -377,6 +397,14 @@ C
           DD_IAD(P,NSPGROUP+N) = DD_IAD(P-1,NSPGROUP+N)+1
         ENDDO
         DD_IAD(1,NSPGROUP+N) = 1
+
+        IF (IDEBUG_Q1NP_GROUP > 0) THEN
+          WRITE(*,*) '..............................................'
+          WRITE(*,'(A,I4,A,I4,A,I4)') 
+     .      'Super-group ', N, 
+     .      ' DD_IAD range: ', DD_IAD(1,NSPGROUP+N), 
+     .      ' to ', DD_IAD(NSPMD+1,NSPGROUP+N)
+        ENDIF
 C          
 C update CEP
 C
@@ -442,19 +470,50 @@ C
 
 C
 C phase 2 : grouping by MVSIZ groups
-C ngroup is global, iparg is global but organized according to dd
+C ngroup is global, iparg is global but organized according to domain decomposition
 C
 
       INEG =  0
       DO 300 N=1,ND
        NFT = 0
+       
+       !REVIEW NEEDED
+       TOTAL_EL = EADD(N+1) - EADD(N)
+       DO P = 1, NSPMD+1
+         NGP(P)=0
+         NGP_START(P)=0
+       ENDDO
+
+       DO P = 1, NSPMD+1
+        IF (P+1 <= NSPMD+1) THEN
+          NEL = DD_IAD(P+1,NSPGROUP+N)-DD_IAD(P,NSPGROUP+N)
+        ELSE
+          NEL = TOTAL_EL - DD_IAD(P,NSPGROUP+N) + 1
+        ENDIF
+       ENDDO
+
        DO P = 1, NSPMD
         ICPT10 = -HUGE(ICPT10)
         NGP(P)=0
         NEL = DD_IAD(P+1,NSPGROUP+N)-DD_IAD(P,NSPGROUP+N)
         IF (NEL>0) THEN
-         NEL_PREC = DD_IAD(P,NSPGROUP+N)-DD_IAD(1,NSPGROUP+N)
-         NGP(P)=NGROUP
+C         Process processor if it has elements
+C         Note: If P > NSPMD, map to processor NSPMD (1-based)
+         IF (P <= NSPMD) THEN
+           NEL_PREC = DD_IAD(P,NSPGROUP+N)-DD_IAD(1,NSPGROUP+N)
+           NGP(P)=NGROUP
+           NGP_START(P)=NGROUP
+         ELSE
+C          Processor beyond NSPMD: map to last processor (NSPMD)
+
+           NEL_PREC = DD_IAD(P,NSPGROUP+N)-DD_IAD(1,NSPGROUP+N)
+C          If NGP_START(NSPMD) not yet set, set it now
+C          If NGP(NSPMD) was already finalized, we need to track the start for this mapping
+           IF (NGP_START(NSPMD) == 0) THEN
+             NGP_START(NSPMD)=NGROUP
+           ENDIF
+C          If NGP(NSPMD) is already finalized, we'll add groups to it at the end
+         ENDIF
          NG  = (NEL-1)/NVSIZ + 1
          DO 220 I=1,NG
 C ngroup global
@@ -1384,6 +1443,11 @@ C-------for the case where we use ISRAT=0 law in Part define and ISRAT=1 laws in
 
 C-------
         NE1 = MIN( NVSIZ, NEL + NEL_PREC - NFT) ! Nb of elements in the group
+        IF (IDEBUG_Q1NP_GROUP > 0) THEN
+          WRITE(*,'(A,I4,A,I4,A,I4,A,I4,A,I4)') 
+     .        'Group ', NGROUP, ': NE1=', NE1, 
+     .        ', NEL=', NEL, ', NEL_PREC=', NEL_PREC, ', NFT=', NFT
+        ENDIF
         IF(ISSN > 4 .AND. IBOLTP /= 0)THEN
 C
           ISSN_ = ISSN
@@ -1448,6 +1512,68 @@ C-------
      .                      C1=TITR)
         ENDIF
 C-------------------------------------------------
+C Q1NP element detection
+C-------------------------------------------------
+          IS_Q1NP_GROUP = .FALSE.
+          IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN
+            IF (PRESENT(KQ1NP_TAB)) THEN
+              DO JJ = 1, NE1
+                II = EADD(N) - 1 + NFT + JJ
+                DO IEL_Q1NP = 1, NUMELQ1NP_G
+                  IF (KQ1NP_TAB(10, IEL_Q1NP) == II) THEN
+                    IS_Q1NP_GROUP = .TRUE.
+                    EXIT
+                  ENDIF
+                ENDDO
+                IF (IS_Q1NP_GROUP) EXIT
+              ENDDO
+            ENDIF
+          ENDIF
+C
+C Set Q1NP Gauss scheme parameters if Q1NP group detected
+C
+          IF (IS_Q1NP_GROUP) THEN
+            IF (Q1NP_NP_U_G > 0 .AND. Q1NP_NP_V_G > 0 .AND. 
+     .          Q1NP_NP_T_G > 0) THEN
+              NPTR = Q1NP_NP_U_G
+              NPTS = Q1NP_NP_V_G
+              NPTT = Q1NP_NP_T_G
+              NPG = NPTR * NPTS * NPTT
+            ELSE
+C             Error: Gauss scheme not properly initialized
+              WRITE(*,'(A,I8,A,I4,A,I4,A,I4)') 
+     .          'SGRTAILS ERROR: Group ', NGROUP, 
+     .          ' is Q1NP but Gauss scheme invalid: NP_U=', Q1NP_NP_U_G,
+     .          ' NP_V=', Q1NP_NP_V_G, 
+     .          ' NP_T=', Q1NP_NP_T_G
+              NPTR = 3
+              NPTS = 3
+              NPTT = 2
+              NPG = NPTR * NPTS * NPTT
+            ENDIF
+          ELSE
+C         Standard solid: NPTR/NPTS/NPTT will be set in elbuf_ini
+            NPTR = 0
+            NPTS = 0
+            NPTT = 0
+            NPG = NPT
+          ENDIF
+C
+C Debug prints - compact summary
+C
+          IF (IDEBUG_Q1NP_GROUP > 0) THEN
+            IF (IS_Q1NP_GROUP) THEN
+              WRITE(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') 
+     .        'Group ', NGROUP, ' (Proc ', P-1, 
+     .        ', ): ', NE1, ' elem(s), Q1NP: NPT_R=', NPTR, 
+     .        ' NPT_S=', NPTS, ' NPT_T=', NPTT, ' Total=', NPG
+            ELSE
+              WRITE(*,'(A,I4,A,I4,A,I4,A)') 
+     .        'Group ', NGROUP, ' (Proc ', P-1, 
+     .        ', ): ', NE1, ' elem(s), Standard solid'
+            ENDIF
+          ENDIF
+C-------------------------------------------------
 C IPARG STORAGE
 C-------------------------------------------------
           IPARG(1,NGROUP) = MLN
@@ -1467,6 +1593,13 @@ C-------------------------------------------------
           IPARG(10,NGROUP)= ICPRE  
           IPARG(17,NGROUP)= ICSTR  
           IPARG(6,NGROUP) = NPT
+C
+C Q1NP Gauss scheme parameters
+C
+          IPARG(56,NGROUP) = NPTR
+          IPARG(57,NGROUP) = NPTS
+          IPARG(58,NGROUP) = NPTT
+C
           IPARG(18,NGROUP)= MID 
           IPARG(20,NGROUP) = 0
           IF (MLN == 151) IPARG(20,NGROUP) = IPM(20, MID)
@@ -1553,8 +1686,27 @@ C------------------------------------------------------
 C
           NFT = NFT + NE1
   220    CONTINUE
-         NGP(P)=NGROUP-NGP(P)
-        ENDIF
+         IF (P <= NSPMD) THEN
+          NGP(P)=NGROUP-NGP(P)
+         ENDIF
+         ENDIF
+       ENDDO
+C
+C Finalize NGP for processors beyond NSPMD that were mapped to NSPMD
+C If NGP_START(NSPMD) was set by P > NSPMD, add those groups to NGP(NSPMD)
+C
+       DO P = 1, NSPMD
+         IF (NGP_START(P) > 0 .AND. NGP_START(P) < NGROUP) THEN
+C          NGP_START(P) was set by a processor P > NSPMD that was mapped to P
+C          Add the groups created for that processor to NGP(P)
+           IF (NGP(P) > 0) THEN
+C          NGP(P) was already finalized (from P <= NSPMD), add new groups
+             NGP(P) = NGP(P) + (NGROUP - NGP_START(P))
+           ELSE
+C          NGP(P) was not finalized (only P > NSPMD was mapped to it)
+             NGP(P) = NGROUP - NGP_START(P)
+           ENDIF
+         ENDIF
        ENDDO
 C
 C Debug: Summary for super-group
@@ -1565,6 +1717,7 @@ C
      .     NGROUP-NGR1+1, ' group(s) processed'
        ENDIF
 C Dd_iad => nb groups per sub domain
+C Note: Groups from processors beyond NSPMD are added to NGP(NSPMD)
        NGP(NSPMD+1)=0
        DO P = 1, NSPMD
          NGP(NSPMD+1)=NGP(NSPMD+1)+NGP(P)

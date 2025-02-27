@@ -86,6 +86,7 @@ C-----------------------------------------------
       USE RWALL_MOD
       USE SFEM_MOD
       USE SEATBELT_MOD , ONLY : NGUIDED_CABLE,NGUIDED_CABLE_G
+      USE Q1NP_RESTART_MOD
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -146,6 +147,7 @@ C-----------------------------------------------
 #include      "remesh_c.inc"
 #include      "com_xfem1.inc"
 #include      "sysunit.inc"
+#include      "units_c.inc"
 #include      "intstamp_c.inc"
 #include      "sms_c.inc"
 #include      "submodel.inc"
@@ -156,7 +158,8 @@ C-----------------------------------------------
 C----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
-          INTEGER LWASPH44C, I, NEXT,IDUM1,ISUSED,SENS_NSTOP,SENS_NSTAT,SENS_NOUTP,SENS_NANIM
+          INTEGER LWASPH44C, I, NEXT,IDUM1,ISUSED,SENS_NSTOP,SENS_NSTAT,
+     .            SENS_NOUTP,SENS_NANIM,NEXTLOC
 C-----------------------------------------------
 C     reading of integer variables.
 C-----------------------------------------------
@@ -1452,6 +1455,50 @@ C
 C
       NEXT=NEXT+1
       SENSORS%STABSEN = TABVINT(NEXT)
+
+C Q1Np element data (always stored after SENSORS%STABSEN)
+      IF (TABVINT_LEN_G - NEXT >= 7) THEN
+        NEXTLOC = NEXT
+        NEXTLOC = NEXTLOC + 1
+        NUMELQ1NP_G = TABVINT(NEXTLOC)
+        NEXTLOC = NEXTLOC + 1
+        SKQ1NP_G = TABVINT(NEXTLOC)
+        NEXTLOC = NEXTLOC + 1
+        SIQ1NP_G = TABVINT(NEXTLOC)
+        NEXTLOC = NEXTLOC + 1
+        SQ1NPBULK_G = TABVINT(NEXTLOC)
+        NEXTLOC = NEXTLOC + 1
+        SQ1NPCTRL_SHARED_G = TABVINT(NEXTLOC)
+        NEXTLOC = NEXTLOC + 1
+        SQ1NPWEIGHT_L_G = TABVINT(NEXTLOC)
+        NEXTLOC = NEXTLOC + 1
+        SQ1NPKNOT_L_G = TABVINT(NEXTLOC)
+
+        IF (NUMELQ1NP_G > 0 .AND. SKQ1NP_G > 0) THEN
+          NKQ1NP_G = SKQ1NP_G / NUMELQ1NP_G
+          IF (MOD(SKQ1NP_G,NUMELQ1NP_G) /= 0) THEN
+            WRITE(ISTDO,'(A,I10,A,I10)') 
+     .        ' ** WARNING: SKQ1NP_G (', SKQ1NP_G,
+     .        ') not divisible by NUMELQ1NP (', NUMELQ1NP_G, ')'
+          ENDIF
+        ELSE
+          NKQ1NP_G = 0
+        ENDIF
+
+C Q1Np counters read from TABVINT (diagnostics removed for verbosity)
+
+        NEXT = NEXTLOC
+      ELSE
+        NUMELQ1NP_G = 0
+        SKQ1NP_G = 0
+        SIQ1NP_G = 0
+        SQ1NPBULK_G = 0
+        SQ1NPCTRL_SHARED_G = 0
+        SQ1NPWEIGHT_L_G = 0
+        SQ1NPKNOT_L_G = 0
+        NKQ1NP_G = 0
+      ENDIF
+
 C Stack info
       NEXT    = NEXT + 1
       IPART_STACK = TABVINT(NEXT)

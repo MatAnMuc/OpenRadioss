@@ -54,7 +54,8 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      F                  CONDN     ,CONDINT   ,CONDNSKYI,IXIG3D   ,KXIG3D    ,
      J                  WIGE      ,KNOT      ,IGEO      ,NIGE     ,RIGE      ,
      K                  X         ,H3D_DATA  ,KNOTLOCPC ,KNOTLOCEL,IFORM     ,
-     L                  NODADT_THERM)
+     L                  NODADT_THERM, ASS_FLAG, load_arr, node_id_load, COUNT,
+     M                  MAX_STS_SIZE_ACTUAL)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -84,7 +85,7 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
-      INTEGER NELTST,ITYPTST,JLT,NIN,NOINT,ISECIN,JTASK,NISKYFI,INTTH,IFORM
+      INTEGER NELTST,ITYPTST,JLT,NIN,NOINT,ISECIN,JTASK,NISKYFI,INTTH,IFORM, ASS_FLAG
 
       INTEGER IX1(MVSIZ), IX2(MVSIZ), IX3(MVSIZ), IX4(MVSIZ),
      .        NSVG(MVSIZ),ITAB(*), ISKY(*), NSTRF(*),
@@ -112,6 +113,11 @@ C-----------------------------------------------
       my_real
      .   WIGE(*),KNOT(*),RIGE(3,*),KNOTLOCPC(*),KNOTLOCEL(*)
       TYPE(H3D_DATABASE) :: H3D_DATA
+      
+      my_real load_arr(MVSIZ,8,4)
+      integer COUNT
+      integer node_id_load(MVSIZ)
+      INTEGER MAX_STS_SIZE_ACTUAL
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
@@ -119,7 +125,7 @@ C-----------------------------------------------
       my_real
      .   DTI
 C-------------------------------------------------------------------------------
-C
+C   
       IF(IDTMINS==2.OR.IDTMINS_INT/=0)THEN
         DTI=DT2T
         CALL I7SMS2(JLT   ,IX1   ,IX2  ,IX3  ,IX4  ,
@@ -165,13 +171,17 @@ c
             ENDIF
           ENDDO
           IF(TAGIGEO==0) THEN
-            CALL I7ASS0(JLT   ,IX1  ,IX2  ,IX3  ,IX4    ,
+            if(ASS_FLAG == 0) THEN
+              CALL I7ASS0(JLT   ,IX1  ,IX2  ,IX3  ,IX4    ,
      2                  NSVG  ,H1   ,H2   ,H3   ,H4     ,STIF ,
      3                  FX1   ,FY1  ,FZ1  ,FX2  ,FY2    ,FZ2  ,
      4                  FX3   ,FY3  ,FZ3  ,FX4  ,FY4    ,FZ4  ,
      5                  FXI   ,FYI  ,FZI  ,A    ,STIFN  ,NIN  ,
      6                  INTTH ,PHI  ,FTHE ,PHI1 , PHI2  ,PHI3 ,
      7                  PHI4  ,CONDN,CONDINT,JTASK,IFORM,NODADT_THERM)
+            else  
+              call I7ASS0_STS(A ,STIFN, load_arr, node_id_load, count, MAX_STS_SIZE_ACTUAL)
+            endif
           ELSE
             CALL I7ASSIGEO0(JLT   ,IX1  ,IX2  ,IX3  ,IX4    ,
      2                  NSVG  ,H1   ,H2   ,H3   ,H4     ,STIF ,
@@ -197,7 +207,8 @@ C
       ELSE
         IF(KDTINT==0)THEN
           IF(TAGIGEO==0) THEN
-            CALL I7ASS2(JLT   ,IX1   ,IX2  ,IX3  ,IX4  ,
+              if(ASS_FLAG == 0) THEN
+                  CALL I7ASS2(JLT   ,IX1   ,IX2  ,IX3  ,IX4  ,
      2                  NSVG  ,H1    ,H2   ,H3   ,H4   ,STIF   ,
      3                  FX1   ,FY1   ,FZ1  ,FX2  ,FY2  ,FZ2    ,
      4                  FX3   ,FY3   ,FZ3  ,FX4  ,FY4  ,FZ4    ,
@@ -205,6 +216,30 @@ C
      6                  NIN   ,NOINT ,INTTH,PHI  ,FTHESKYI ,PHI1,
      7                  PHI2  ,PHI3 , PHI4 ,CONDNSKYI,CONDINT,
      A                  IFORM ,NODADT_THERM)
+              ELSE
+                  CALL I7ASS2_STS(JLT   ,IX1   ,IX2  ,IX3  ,IX4  ,
+     2                  NSVG  ,H1    ,H2   ,H3   ,H4   ,STIF   ,
+     3                  FX1   ,FY1   ,FZ1  ,FX2  ,FY2  ,FZ2    ,
+     4                  FX3   ,FY3   ,FZ3  ,FX4  ,FY4  ,FZ4    ,
+     5                  FXI   ,FYI   ,FZI  ,FSKYI,ISKY ,NISKYFI,
+     6                  NIN   ,NOINT ,INTTH,PHI  ,FTHESKYI ,PHI1,
+     7                  PHI2  ,PHI3 , PHI4 ,CONDNSKYI,CONDINT,
+     A                  IFORM, load_arr, node_id_load, count, MAX_STS_SIZE_ACTUAL)
+              ENDIF
+              !write(*,*) 
+              !write(*,*) "Assembled Forces:"
+              !write(*,*) FSKYI(1:18,3)
+              !write(*,*) FSKYI(1:NISKYL,3)
+              !write(*,*)
+              !write(*,*) "Assembled Stiffness:"
+              !write(*,*) FSKYI(1:18,4)
+              !write(*,*) FSKYI(1:NISKYL,4)
+              !write(*,*)      
+              !write(*,*) "To Internal Nodes:"
+              !write(*,*) ISKY(1:18)
+              !write(*,*) ISKY(1:NISKYL)
+              !write(*,*) 
+              
           ELSE
 c         CALL I7ASSIGEO2(JLT   ,IX1  ,IX2  ,IX3  ,IX4    ,
 c     2               NSVG  ,H1   ,H2   ,H3   ,H4     ,STIF ,
@@ -731,6 +766,7 @@ C-----------------------------------------------
 C   C o m m o n   B l o c k s
 C-----------------------------------------------
 #include      "scr18_c.inc"
+#include      "com08_c.inc"
 C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
@@ -746,14 +782,14 @@ C-----------------------------------------------
      .    FXI(MVSIZ),FYI(MVSIZ),FZI(MVSIZ),
      .    A(3,*),  STIFN(*),PHI(*), FTHE(*),
      .    PHI1(*), PHI2(*), PHI3(*), PHI4(*),
-     .    CONDN(*),CONDINT(*)
+     .    CONDN(*),CONDINT(*), SUM, SUMSTIF
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
       INTEGER I, J1, IG, ISHIFT, NODFI
 C
       !---REACTION FORCE AGAINST LAGRANGIAN FACE
-      !
+      !ASSEMBLED PRIMARY FORCES PER INTERNAL NODE ID
       IF(INTTH == 0) THEN
         DO I=1,JLT
           J1=IX1(I)
@@ -846,7 +882,7 @@ C
             FTHE(J1) = FTHE(J1) + PHI4(I)
           ENDDO
         ENDIF
-      ENDIF
+      ENDIF        
 C
       !---FLUID REACTION FORCE
       !
@@ -859,7 +895,7 @@ C
             A(1,IG)=A(1,IG)-FXI(I)
             A(2,IG)=A(2,IG)-FYI(I)
             A(3,IG)=A(3,IG)-FZI(I)
-            STIFN(IG) = STIFN(IG) + STIF(I)
+            STIFN(IG) = STIFN(IG) + STIF(I)           
           ELSE
             IG = -IG
             AFI(NIN)%P(1,IG+ISHIFT)=AFI(NIN)%P(1,IG+ISHIFT)-FXI(I)
@@ -910,7 +946,83 @@ C
           ENDDO
         ENDIF
       ENDIF
-C
+C                
+      RETURN
+      END
+
+!|====================================================================
+! NEW STS FORCE ASSEMBLY FOR OPTION /PARITH/OFF
+!|====================================================================
+      SUBROUTINE I7ASS0_STS(A ,STIFN, load_arr, node_arr, count, MAX_STS_SIZE_ACTUAL)
+C-----------------------------------------------
+C   M o d u l e s
+C-----------------------------------------------
+      USE TRI7BOX
+C-----------------------------------------------
+C   I m p l i c i t   T y p e s
+C-----------------------------------------------
+#include      "implicit_f.inc"
+C-----------------------------------------------
+C   G l o b a l   P a r a m e t e r s
+C-----------------------------------------------
+#include      "mvsiz_p.inc"
+C-----------------------------------------------
+C   C o m m o n   B l o c k s
+C-----------------------------------------------
+#include      "scr18_c.inc"
+#include      "com08_c.inc"
+C-----------------------------------------------
+C   D u m m y   A r g u m e n t s
+C-----------------------------------------------
+      my_real A(3,*),  STIFN(*)
+      my_real load_arr(MAX_STS_SIZE_ACTUAL,8,4) !(ELEMENT, 8 NODES, FORCE/STIFF)
+      INTEGER node_arr(MAX_STS_SIZE_ACTUAL*8) !node id array
+      INTEGER count, MAX_STS_SIZE_ACTUAL
+C-----------------------------------------------
+C   L o c a l   V a r i a b l e s
+C-----------------------------------------------
+      INTEGER I, J1, J, total_nodes, num_blocks, K
+      INTEGER, ALLOCATABLE :: node_arr_reshaped(:,:)
+      my_real :: sum_prim, sum_sec
+!--------------------------------------------------      
+! Adjust count (refers to number of 8-node elements)      
+      COUNT = COUNT-1 !NR OF 8 NODE ELEMENTS 
+
+C     Initialize force balance counters
+      sum_prim = 0.0
+      sum_sec  = 0.0
+
+C Get total number of node indices and number of 8-node blocks
+      total_nodes = MAX_STS_SIZE_ACTUAL * 8
+      num_blocks = MAX_STS_SIZE_ACTUAL
+     
+C Assembly loop: add values from load_arr to global force (A) and stiffness (STIFN)      
+      DO I = 1, COUNT!*8
+          IF (node_arr((I-1)*8 + 1) <= 0) EXIT  ! Check for valid element
+
+            DO J = 1, 8
+              J1 = node_arr((I-1)*8 + J)
+              IF (J1 <= 0) CYCLE  ! Skip invalid node
+
+C             Separate primary (nodes 1-4) and secondary (nodes 5-8) forces
+              IF (J <= 4) THEN
+                sum_prim = sum_prim + load_arr(I, J, 3)  ! Z component
+              ELSE
+                sum_sec = sum_sec + load_arr(I, J, 3)    ! Z component
+              ENDIF
+
+              A(1, J1) = A(1, J1) + load_arr(I, J, 1)    ! X component
+              A(2, J1) = A(2, J1) + load_arr(I, J, 2)    ! Y component
+              A(3, J1) = A(3, J1) + load_arr(I, J, 3)    ! Z component
+              STIFN(J1) = STIFN(J1) + load_arr(I, J, 4)  ! Stiffness
+            END DO
+      END DO
+
+C     Print force balance to terminal
+      WRITE(*,*) 'SUM OF ASSEMBLED PRIMARY FORCES (Z):', sum_prim
+      WRITE(*,*) 'SUM OF ASSEMBLED SECONDARY FORCES (Z):', sum_sec
+      WRITE(*,*)
+
       RETURN
       END
 
@@ -1633,6 +1745,109 @@ C
 !      enddo
 !#include "lockoff.inc"
 C
+      RETURN
+      END
+
+      SUBROUTINE I7ASS2_STS(JLT   ,IX1   ,IX2  ,IX3  ,IX4   ,
+     2                  NSVG  ,H1    ,H2   ,H3   ,H4    ,STIF   ,
+     3                  FX1   ,FY1   ,FZ1  ,FX2  ,FY2   ,FZ2    ,
+     4                  FX3   ,FY3   ,FZ3  ,FX4  ,FY4   ,FZ4    ,
+     5                  FXI   ,FYI   ,FZI  ,FSKYI,ISKY  ,NISKYFI,
+     6                  NIN   ,NOINT ,INTTH,PHI  ,FTHESKYI,PHI1,
+     7                  PHI2  ,PHI3 , PHI4 ,CONDNSKYI,CONDINT,
+     A                  IFORM , load_arr, node_arr, count, MAX_STS_SIZE_ACTUAL)
+C-----------------------------------------------
+C   M o d u l e s
+C-----------------------------------------------
+      USE TRI7BOX
+      USE MESSAGE_MOD
+C-----------------------------------------------
+C   I m p l i c i t   T y p e s
+C-----------------------------------------------
+#include      "implicit_f.inc"
+#include      "comlock.inc"
+C-----------------------------------------------
+C   G l o b a l   P a r a m e t e r s
+C-----------------------------------------------
+#include      "mvsiz_p.inc"
+C-----------------------------------------------
+C   C o m m o n   B l o c k s
+C-----------------------------------------------
+#include      "parit_c.inc"
+#include      "scr18_c.inc"
+C-----------------------------------------------
+C   D u m m y   A r g u m e n t s
+C-----------------------------------------------
+      INTEGER JLT,NISKYFI,NIN,NOINT,INTTH,IFORM,
+     .        ISKY(*),
+     .        IX1(MVSIZ),IX2(MVSIZ),IX3(MVSIZ),IX4(MVSIZ),NSVG(MVSIZ)
+      my_real
+     .    H1(MVSIZ),H2(MVSIZ),H3(MVSIZ),H4(MVSIZ),STIF(MVSIZ),
+     .    FX1(MVSIZ),FY1(MVSIZ),FZ1(MVSIZ),
+     .    FX2(MVSIZ),FY2(MVSIZ),FZ2(MVSIZ),
+     .    FX3(MVSIZ),FY3(MVSIZ),FZ3(MVSIZ),
+     .    FX4(MVSIZ),FY4(MVSIZ),FZ4(MVSIZ),
+     .    FXI(MVSIZ),FYI(MVSIZ),FZI(MVSIZ),
+     .    FSKYI(LSKYI,NFSKYI),FTHESKYI(LSKYI),PHI(MVSIZ),CONDINT(MVSIZ),
+     .    PHI1(*),PHI2(*)  ,PHI3(*) ,PHI4(*),CONDNSKYI(LSKYI), SUM, SUMSTIF
+      
+      my_real load_arr(MAX_STS_SIZE_ACTUAL,8,4) !(ELEMENT, 8 NODES, FORCE/STIFF)
+      integer COUNT
+      integer node_arr(MAX_STS_SIZE_ACTUAL*8) !node id array
+      INTEGER MAX_STS_SIZE_ACTUAL
+C-----------------------------------------------
+C   L o c a l   V a r i a b l e s
+C-----------------------------------------------    
+      INTEGER I, J, IG, NISKYL1, NISKYL,IGP,IGM,IDR,NISKYFIL
+C-----------------------------------------------
+C   S o u r c e   L i n e s
+C-----------------------------------------------      
+C     Safety check: validate count
+      IF (COUNT <= 0) THEN
+        WRITE(*,*) "I7ASS2_STS: WARNING - Invalid count = ", COUNT
+        RETURN
+      ENDIF
+
+C     Adjust count (refers to number of 8-node elements)
+      COUNT = COUNT - 1
+
+C     Safety check: validate array bounds
+      IF (COUNT*8 > MAX_STS_SIZE_ACTUAL*8) THEN
+        WRITE(*,*) "I7ASS2_STS: ERROR - Array bounds exceeded"
+        WRITE(*,*) "  COUNT*8 = ", COUNT*8, " > MAX_STS_SIZE_ACTUAL*8 = ", MAX_STS_SIZE_ACTUAL*8
+        RETURN
+      ENDIF
+
+C     Fill ISKY array with node IDs
+      DO I = 1, COUNT*8
+          ISKY(I) = node_arr(I)
+      ENDDO
+
+C     Calculate required skyline size and check bounds
+      NISKYL = COUNT * 8
+
+#include "lockon.inc"
+      IF (NISKY + NISKYL > LSKYI) THEN
+        CALL ANCMSG(MSGID=26,ANMODE=ANINFO)
+        CALL ARRET(2)
+      ENDIF
+      NISKYL = NISKY
+      NISKY = NISKY + NISKYL
+#include "lockoff.inc"
+
+C     Assemble forces from load_arr into FSKYI
+      DO I = 1, COUNT
+          DO J = 1, 8
+              NISKYL = NISKYL + 1
+
+C             Store force and stiffness in skyline array
+              FSKYI(NISKYL, 1) = load_arr(I, J, 1)  ! X component
+              FSKYI(NISKYL, 2) = load_arr(I, J, 2)  ! Y component
+              FSKYI(NISKYL, 3) = load_arr(I, J, 3)  ! Z component
+              FSKYI(NISKYL, 4) = load_arr(I, J, 4)  ! Stiffness
+          END DO
+      END DO
+
       RETURN
       END
 C
