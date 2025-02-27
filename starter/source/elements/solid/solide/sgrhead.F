@@ -42,7 +42,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      5       IGEO       ,IPM           ,NOD2ELS   ,ISOLOFF ,
      6       TAGPRT_SMS ,SPH2SOL       ,SOL2SPH   ,MAT_PARAM,
      7       SOL2SPH_TYP,IFLAG_BPRELOAD,CLUSTERS  ,RNOISE  ,
-     8       DAMP_RANGE_PART,TRIMAT)
+     8       DAMP_RANGE_PART,TRIMAT, KQ1NP_TAB)
 C-----------------------------------------------
 C            A R G U M E N T S
 C-----------------------------------------------
@@ -74,6 +74,7 @@ C-----------------------------------------------
       USE NAMES_AND_TITLES_MOD , ONLY : NCHARTITLE
       use element_mod , only : nixs
       use get_sort_key_solid_mod , only : get_sort_key_solid
+      USE Q1NP_RESTART_MOD
 C-----------------------------------------------
 C   I M P L I C I T   T Y P E S
 C-----------------------------------------------
@@ -99,6 +100,7 @@ C-----------------------------------------------
      .        NOD2ELS(*), ISOLOFF(*),
      .        TAGPRT_SMS(*), SPH2SOL(*), 
      .        SOL2SPH(2,*),SOL2SPH_TYP(*),IFLAG_BPRELOAD(*)
+      INTEGER, INTENT(IN), OPTIONAL :: KQ1NP_TAB(15,*)
       INTEGER,INTENT(IN) :: IPM(NPROPMI,NUMMAT)
       INTEGER,INTENT(INOUT) :: IGEO(NPROPGI,NUMGEO)
       INTEGER, INTENT(IN)   :: DAMP_RANGE_PART(NPART)   ! < flag to compute the damping range
@@ -146,6 +148,12 @@ C
         ALLOCATE(XNUM_RNOISE(NPERTURB,0),STAT=stat)
       ENDIF
 C
+        IF (IDEBUG_Q1NP_SORT > 0) THEN
+          WRITE(*,*) ''
+          WRITE(*,*) '=============================================='
+          WRITE(*,*) 'SGRHEAD: Checking Q1NP elements'
+          WRITE(*,*) '=============================================='
+        ENDIF
       DO I=1,NUMELS
         INDEX2(I)=PERMUTATION%SOLID(I)
         EADD(I)=1
@@ -192,7 +200,46 @@ C
      .                                 itri,ixs,igeo, 
      .                                 ipm,pm,geo, 
      .                                 mat_param)
+Clef 9---------------------------------
+C       Q1NP element flag ITRI(9)
+        IS_Q1NP = 0
+        IF (NUMELQ1NP_G > 0) THEN
+          IF (PRESENT(KQ1NP_TAB)) THEN
+            DO IEL_Q1NP = 1, NUMELQ1NP_G
+              IF (KQ1NP_TAB(10, IEL_Q1NP) == I) THEN
+                IS_Q1NP = 1
 
+C           Debug: print Q1NP element information
+                IF (IDEBUG_Q1NP_SORT > 0) THEN
+                  WRITE(*,'(A,I4,A,I4,A)') 
+     .              'Element ', I, 
+     .              ' is Q1NP element (IEL_Q1NP=', IEL_Q1NP, ')'
+                ENDIF
+
+                EXIT
+              ENDIF
+            ENDDO
+          ENDIF
+        ENDIF
+        ITRI(9,I) = IS_Q1NP
+c        
+      ENDDO
+C
+C       Debug: print total Q1NP elements found in ITRI(8)
+      IF (IDEBUG_Q1NP_SORT > 0 .AND. NUMELQ1NP_G > 0) THEN
+        ! Count number of Q1NP elements by summing ITRI(8,:)
+        NUM_Q1NP_FROM_ITRI = 0
+
+C       count number of Q1NP elements by summing ITRI(8,:)
+        DO J = 1, NUMELS
+          IF (ITRI(8,J) == 1) NUM_Q1NP_FROM_ITRI = NUM_Q1NP_FROM_ITRI + 1
+        ENDDO
+
+        WRITE(*,'(A,I4,A,I4)') 
+     .    'Total Q1NP elements found: by input=', NUMELQ1NP_G,
+     .    ', by ITRI(8)=', NUM_Q1NP_FROM_ITRI
+      ENDIF
+C
       MODE=0
       CALL MY_ORDERS( MODE, WORK, ITRI, INDEX, NUMELS , 8)
 C

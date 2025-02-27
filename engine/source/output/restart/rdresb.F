@@ -217,6 +217,7 @@ C-----------------------------------------------
       use rwall_mod
       use restart_rwallpen_mod, only : get_nrwallpen_l,read_rrwallpen
       use sfem_mod
+      USE Q1NP_RESTART_MOD
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -252,6 +253,7 @@ C-----------------------------------------------
 #include      "spmd_c.inc"
 #include      "tabsiz_c.inc"
 #include      "task_c.inc"
+#include      "units_c.inc"
 C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
@@ -1011,6 +1013,46 @@ C----------------------------------
       CALL READ_I_C(KXIG3D,SKXIG3D)
       CALL READ_I_C(IXIG3D,SIXIG3D)
 C----------------------------------
+C Q1Np element integer arrays (must be read after isogeo, before TAG_SKINS6, matching starter write order)
+C----------------------------------
+      IF (NUMELQ1NP_G > 0) THEN
+C Check allocation status
+        IF (.NOT. ALLOCATED(KQ1NP_TAB)) THEN
+          WRITE(ISTDO,'(A)') 
+     .      ' ** ERROR: KQ1NP_TAB not allocated before read'
+          CALL ARRET(2)
+        ENDIF
+        IF (SIQ1NP_G > 0 .AND. .NOT. ALLOCATED(IQ1NP_TAB)) THEN
+          WRITE(ISTDO,'(A)') 
+     .      ' ** ERROR: IQ1NP_TAB not allocated before read'
+          CALL ARRET(2)
+        ENDIF
+        IF (SQ1NPBULK_G > 0 .AND. .NOT. ALLOCATED(IQ1NP_BULK_TAB)) THEN
+          WRITE(ISTDO,'(A)') 
+     .      ' ** ERROR: IQ1NP_BULK_TAB not allocated before read'
+          CALL ARRET(2)
+        ENDIF
+C Bounds validation
+        IF (SKQ1NP_G > 0) THEN
+          IF (NKQ1NP_G > 0 .AND. NUMELQ1NP_G > 0) THEN
+            IF (SKQ1NP_G /= NKQ1NP_G * NUMELQ1NP_G) THEN
+              WRITE(ISTDO,'(A,I10,A,I10,A,I10)') 
+     .          ' ** ERROR: Size mismatch: SKQ1NP_G=', SKQ1NP_G,
+     .          ' expected NKQ1NP_G*NUMELQ1NP=', NKQ1NP_G*NUMELQ1NP_G,
+     .          ' (NKQ1NP_G=', NKQ1NP_G, ', NUMELQ1NP=', NUMELQ1NP_G, ')'
+              CALL ARRET(2)
+            ENDIF
+          ENDIF
+          CALL READ_I_C(KQ1NP_TAB,SKQ1NP_G)
+        ENDIF
+        IF (SIQ1NP_G > 0) THEN
+          CALL READ_I_C(IQ1NP_TAB,SIQ1NP_G)
+        ENDIF
+        IF (SQ1NPBULK_G > 0) THEN
+          CALL READ_I_C(IQ1NP_BULK_TAB,SQ1NPBULK_G)
+        ENDIF
+      ENDIF
+C----------------------------------
       CALL READ_I_C(TAG_SKINS6,NUMELS)
 C----------------------------------
 C /BCS/CYCLIC
@@ -1049,6 +1091,37 @@ C
 C-----
       CALL RDCOMR(LMXVREA,TABVREA,DYNAIN_DATA,INTERFACES%PARAMETERS,
      .            OUTPUT,GLOB_THERM)
+C--------------------------------------
+C Q1Np element real arrays (must be read right after TABVREA, matching starter write order)
+C--------------------------------------
+      IF (NUMELQ1NP_G > 0) THEN
+C Check allocation status
+        IF (SQ1NPWEIGHT_L_G > 0 .AND. .NOT. ALLOCATED(Q1NP_WTAB)) THEN
+          WRITE(ISTDO,'(A)') 
+     .        ' ** ERROR: Q1NP_WTAB not allocated before read'
+          CALL ARRET(2)
+        ENDIF
+        IF (SQ1NPKNOT_L_G > 0 .AND. .NOT. ALLOCATED(Q1NP_KTAB)) THEN
+          WRITE(ISTDO,'(A)') 
+     .        ' ** ERROR: Q1NP_KTAB not allocated before read'
+          CALL ARRET(2)
+        ENDIF
+        IF (SQ1NPCTRL_SHARED_G > 0 .AND. .NOT. ALLOCATED(Q1NP_CPTAB)) THEN
+          WRITE(ISTDO,'(A)') 
+     .        ' ** ERROR: Q1NP_CPTAB not allocated before read'
+          CALL ARRET(2)
+        ENDIF
+C Read real arrays
+        IF (SQ1NPWEIGHT_L_G > 0) THEN
+          CALL READ_DB(Q1NP_WTAB,SQ1NPWEIGHT_L_G)
+        ENDIF
+        IF (SQ1NPKNOT_L_G > 0) THEN
+          CALL READ_DB(Q1NP_KTAB,SQ1NPKNOT_L_G)
+        ENDIF
+        IF (SQ1NPCTRL_SHARED_G > 0) THEN
+          CALL READ_DB(Q1NP_CPTAB,3*SQ1NPCTRL_SHARED_G)
+        ENDIF
+      ENDIF
 C--------------------------------------
 C     READING REALS
 C--------------------------------------

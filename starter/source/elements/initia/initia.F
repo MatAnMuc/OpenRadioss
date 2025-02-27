@@ -897,6 +897,29 @@ C---
       DT2S=1.E6
       CPT_ELTENS = 0
 C
+C     Create flag array for Q1Np replaced elements in module (replaced HEX8 elements by Q1Np elements)
+C     This will be used to skip SMASS3 for replaced elements
+      IF (NUMELS > 0) THEN
+        IF (ALLOCATED(IS_Q1NP_REPLACED_G)) DEALLOCATE(IS_Q1NP_REPLACED_G)
+        ALLOCATE(IS_Q1NP_REPLACED_G(NUMELS), STAT=STAT)
+        IF(STAT /= 0) THEN
+          CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,
+     .                C1='IS_Q1NP_REPLACED_G')
+        ENDIF
+        IS_Q1NP_REPLACED_G(1:NUMELS) = .FALSE.
+        IF (NUMELQ1NP_G > 0) THEN
+          DO I=1,NUMELQ1NP_G
+            IEL_HEX8 = KQ1NP_TAB(10, I)
+            IF (IEL_HEX8 > 0 .AND. IEL_HEX8 <= NUMELS) THEN
+              IS_Q1NP_REPLACED_G(IEL_HEX8) = .TRUE.
+            ENDIF
+          ENDDO
+        ENDIF
+      ELSE
+        IF (ALLOCATED(IS_Q1NP_REPLACED_G)) DEALLOCATE(IS_Q1NP_REPLACED_G)
+        ALLOCATE(IS_Q1NP_REPLACED_G(0))
+      ENDIF
+C
       DO  NG=1,NGROUP
         MTN=IPARG(1,NG)
         NEL=IPARG(2,NG)
@@ -1363,7 +1386,10 @@ C Case total strain
      B              XREFS        ,NPC          ,PLD    ,MSSA       ,STRSGLOB(NF1),
      C              STRAGLOB(NF1),FAIL_INI     ,SPBUF  ,KXSP       ,IPART(I15J),
      D              NOD2SP       ,SOL2SPH      ,IRST   ,ILOADP     ,FACLOAD    ,
-     E              RNOISE       ,PERTURB      ,MAT_PARAM,GLOB_THERM)        
+     E              RNOISE       ,PERTURB      ,MAT_PARAM, GLOB_THERM, STIF_STS_CUR)      
+                IF (STIF_STS_CUR < STIF_STS) THEN
+                    STIF_STS = STIF_STS_CUR
+                END IF
             ELSE IF (JMULT > 0 .AND. MTN == 151) THEN
       !Multifluid law
                CALL MULTIFLUID_INIT3 (
@@ -1382,7 +1408,7 @@ C Case total strain
      E              MULTI_FVM, ERROR_THROWN,DETONATORS, MAT_PARAM)
             ENDIF
            
-            CALL SREFSTA3(
+             CALL SREFSTA3(
      1        ELBUF_TAB(NG),IXS        ,PM         ,GEO      ,IPARG(1,NG),  
      2        IPM          ,IGEO       ,SKEW       ,X        ,XREFS     ,
      3        NEL          ,IPART(I15A),IPART      ,BUFMAT   ,MAT_PARAM,              

@@ -71,10 +71,10 @@ C-----------------------------------------------
       found_segments = -1  ! Initialize with -1 to indicate not found   
       N = 1
       CAND_SEC_SEG = -1
-      CAND_MST_SEG = -1  
+      CAND_MST_SEG = -1
       ! Compare candidate array with IGRSURF_TEMP table to derive the respective index
       COUNT = 0
-      
+
       ! Map candidate nodes to segment pairs
       DO I = 1, INTBUF_TAB(1)%S_CAND_N
         candidate = INTBUF_TAB(1)%NSV(INTBUF_TAB(1)%CAND_N(I))
@@ -94,8 +94,8 @@ C-----------------------------------------------
                 EXIT
               END IF
             END DO
-
-            ! Add new unique segment pair            
+            
+            ! Add new unique segment pair
             IF (.NOT. duplicate) THEN
               COUNT = COUNT + 1
               IF (COUNT > MAX_STS_SIZE_ACTUAL) THEN
@@ -123,9 +123,11 @@ C-----------------------------------------------
           J = J + 1
           ADJA(J, 1) = CAND_SEC_SEG(I)
           ADJA(J, 2) = CAND_MST_SEG(I)
+          END IF
         END IF
       END DO
-      
+      COUNT = K
+
       COUNT = J
       J = 1
       
@@ -134,7 +136,7 @@ C-----------------------------------------------
         ! Secondary segment nodes
         CAND_SEC_SEG_ID(I, 1) = CAND_SEC_SEG(I)
         CAND_SEC_SEG_ID(I, 2:5) = IGRSURF(1)%NODES(CAND_SEC_SEG(I), 1:4)
-        
+
         ! Primary segment nodes
         CAND_MST_SEG_ID(I, 1) = CAND_MST_SEG(I)
         CAND_MST_SEG_ID(I, 2:5) = IRECT(1:4, CAND_MST_SEG(I))
@@ -152,7 +154,7 @@ C-----------------------------------------------
           J = J + 1
         END DO
       END DO
-      
+          
       ! SECONDARY -> SECOND (5-8)
       DO I = 1, COUNT
         J = 5
@@ -253,6 +255,12 @@ C   I n i t i a l i z a t i o n
 C-----------------------------------------------
       IMPACT_glob = 0
       
+      ! Safety check
+      IF (COUNT <= 0) THEN
+        L_out = 1
+        RETURN
+      END IF
+      
       ! Initialize counters
       K = 1
       L = 1
@@ -269,7 +277,7 @@ C-----------------------------------------------
           node_ids(J+4) = CAND_SEC_SEG_ID(I, J+1)   ! Secondary nodes
         ENDDO
         XMU(1) = FRICC(1) ! Friction coefficient mu
-        
+      
         ! Call GEN_STS with friction calculation integrated
         ! Note: STIF is used for both normal and tangential stiffness
         ! (STIF0 = STIF for now, until separate tangential stiffness is available)
@@ -291,7 +299,7 @@ C-----------------------------------------------
       
         IF (IMPACT == 1) THEN
           IMPACT_glob = 1
-          
+      
           ! Save node IDs: Primary (1-4), Secondary (5-8)
           node_id_load(K:K+3) = CAND_MST_SEG_ID(I, 2:5)
           node_id_load(K+4:K+7) = CAND_SEC_SEG_ID(I, 2:5)
@@ -310,6 +318,10 @@ C-----------------------------------------------
       
           L = L + 1
           
+          ! Safety check - prevent array overflow
+          IF (L > MAX_STS_SIZE_ACTUAL .OR. K > MAX_STS_SIZE_ACTUAL*8) THEN
+            EXIT
+          END IF
         ENDIF
       ENDDO
       
@@ -321,7 +333,7 @@ c----------------------------------------------------------------------c
 c.... general subroutines
 c----------------------------------------------------------------------c
 ************************************************************************
-
+      
       INTEGER FUNCTION GET_GLOBAL_GP_INDEX(PAIR_INDEX, Z, Q, IP_MAX)
 C-----------------------------------------------------------------------
 C Compute global Gauss point index from STS pair index and
@@ -532,7 +544,7 @@ C     Loop over integration points
           ! Build position and derivative matrices
           call pos112(a, daxi1, daxi2, daeta1, daeta2, xi1, xi2, 
      &               eta1(z), eta2(q))
-
+          
           ! Calculate surface geometry and metrics
           call surfgeom112(XUPD, daxi1, daxi2, daeta1, daeta2, norm,
      &                    rhoxi1, rhoxi2, m_ij, detm, mij, detmPrimary)
@@ -602,12 +614,12 @@ C     Loop over integration points
           ! Penetration detected
           IMPACT = 1
           penetr = PENE
-
+          
           ! Calculate penalty parameter
           d1 = STIF(1) * 1.0d0
           FAC = GAPV / MAX(EM10, (GAPV+PENE))
           d1 = 0.5d0 * d1 * FAC
-
+          
           ! Extract nodal stiffness and set penetration flag if penetration detected
           IF (IMPACT == 1) THEN
             node_stiff = d1 ! TODO: Review
@@ -774,7 +786,7 @@ C     Loop over integration points
               pm_friction((j-1)*3+3) = pm_friction((j-1)*3+3) - 
      &                               N_xi(1,j) * FZT * wi1_fric * 
      &                               wi2_fric * dsqrt(detm_fric)
-            ENDDO
+        ENDDO
             
             ! Secondary nodes (5-8): add friction
             DO j=1,4
@@ -787,8 +799,8 @@ C     Loop over integration points
               pm_friction(12+(j-1)*3+3) = pm_friction(12+(j-1)*3+3) + 
      &                                  N_eta(1,j) * FZT * wi1_fric * 
      &                                  wi2_fric * dsqrt(detm_fric)
-            ENDDO
-            
+      ENDDO
+               
             ! Energy calculation
             ! Calculate tangential velocity from relative velocity
             ! Project V_rel onto tangent plane
@@ -799,11 +811,11 @@ C     Loop over integration points
             !VZ = V_rel(3) - FTN*norm(3)
             !EFRICT = EFRICT + DT1 * (VX*FXT + VY*FYT + VZ*FZT) * 
             !&              wi1(z) * wi2(q) * dsqrt(detm)
-          ENDIF
+      ENDIF
           ! ===== END FRICTION CALCULATION =====
         ENDDO
       ENDDO
-                      
+         
 C-----------------------------------------------
 C   F i n a l   R e s u l t s
 C-----------------------------------------------
@@ -829,6 +841,8 @@ C-----------------------------------------------
 
       RETURN
       END
+
+
 
 C-----------------------------------------------
 C Project point to surface parameterization
@@ -864,10 +878,12 @@ C   Initialization - set initial guess
 C-----------------------------------------------
       xi1 = 0.d0
       xi2 = 0.d0
+      
 C-----------------------------------------------
 C   Get shape functions for Secondary surface
 C-----------------------------------------------
       call shape112(eta1, eta2, N_eta)
+
 C-----------------------------------------------
 C   Compute Secondary point position in global coords
 C-----------------------------------------------
@@ -1408,7 +1424,7 @@ C-----------------------------------------------
       
       RETURN
       END
-      
+        
 
 C-----------------------------------------------
 C   Compute convective increments in local coordinates for friction

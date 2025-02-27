@@ -72,7 +72,8 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      D           V      ,NIGE    ,RIGE     ,XIGE   ,
      E           VIGE    ,IADTABIGE,DECALIGEO,IADBOXMAX,KNOD2ELQ,
      F           NOD2ELQ ,SUBSET  ,IGRBRIC ,IGRSH4N  ,IGRSH3N,
-     G           KNOTLOCPC,KNOTLOCEL,NSETS,MAP_TABLES)
+     G           KNOTLOCPC,KNOTLOCEL,NSETS,MAP_TABLES,
+     H           KQ1NP_TAB,IQ1NP_TAB,IQ1NP_BULK_TAB)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -127,6 +128,9 @@ C-----------------------------------------------
      .        WIGE(*),KNOT(*),KNOTLOCPC(*),KNOTLOCEL(*)
       TYPE(SUBMODEL_DATA) LSUBMODEL(NSUBMOD)
       TYPE(MAPPING_STRUCT_), INTENT(IN) :: MAP_TABLES
+      INTEGER, OPTIONAL :: KQ1NP_TAB(15,*)
+      INTEGER, OPTIONAL :: IQ1NP_TAB(*)
+      INTEGER, OPTIONAL :: IQ1NP_BULK_TAB(*)
 C-----------------------------------------------
       TYPE (SUBSET_) , DIMENSION(NSUBS)   :: SUBSET
       TYPE (GROUP_)  , DIMENSION(NGRBRIC) :: IGRBRIC
@@ -625,7 +629,8 @@ C=======================================================================
      4                    KNOD2ELC,NOD2ELC ,KNOD2ELTG,NOD2ELTG,                
      5                    IXC     ,IXTG    ,IPARTC   ,IPARTTG ,NINDX,          
      6                    NINDX_SOL, NINDX_SOL10, INDX, INDX_SOL, INDX_SOL10,  
-     7                    SURF_ELM)                                            
+     7                    SURF_ELM,
+     8                    KQ1NP_TAB,IQ1NP_TAB,IQ1NP_BULK_TAB)                                            
             IF (FLAG == 0) THEN                                                
               IGRSURF(IGS)%NSEG = NSEG                                         
             ENDIF                                                              

@@ -45,6 +45,7 @@ C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
       USE ALE_MOD
+      USE Q1NP_RESTART_MOD, ONLY: IS_Q1NP_REPLACED_G, NUMELQ1NP_G
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -76,6 +77,17 @@ C-----------------------------------------------
 C-------------------------------
 C=======================================================================
        DO I=LFT,LLT
+
+C       Skip mass calculation for Q1Np replaced elements (temporary workaround to avoid mass subtraction)
+C       This will be replaced with proper integration-based calculation in the future, TODO
+        IF (NUMELQ1NP_G > 0) THEN
+          IF (ALLOCATED(IS_Q1NP_REPLACED_G)) THEN
+            IF (NFT+I > 0 .AND. NFT+I <= SIZE(IS_Q1NP_REPLACED_G)) THEN
+              IF (IS_Q1NP_REPLACED_G(NFT+I)) CYCLE
+            ENDIF
+          ENDIF
+        ENDIF
+
         MASS(I)  =FILL(I)*RHO(I)*VOLU(I)*ONE_OVER_8
         MASSF(I) =FILL(I)*FRAC(I)*RHOF(I)*VOLU(I)*ONE_OVER_8
         I1 = NC1(I)
