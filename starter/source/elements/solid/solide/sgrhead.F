@@ -118,7 +118,9 @@ C-----------------------------------------------
      .        II,II0,JJ0,II1,JJ1,II2,JJ2,JJ,II3,JJ3,II4,JJ4,II5,JJ5,
      .        II6,JJ6,MODE,
      .        INUM_R2R(1+R2R_SIU*NUMELS),
-     .        IPERT,STAT
+     .        IPERT,STAT,
+     .        IS_Q1NP,IEL_Q1NP,NUM_Q1NP_FROM_ITRI
+      INTEGER, PARAMETER :: IDEBUG_Q1NP_SORT = 0
           
       INTEGER WORK(70000)
       EXTERNAL MY_SHIFTL,MY_SHIFTR,MY_AND
