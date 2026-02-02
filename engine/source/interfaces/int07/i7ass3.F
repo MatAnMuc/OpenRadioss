@@ -913,6 +913,190 @@ C
 C
       RETURN
       END
+
+!|====================================================================
+! NEW STS FORCE ASSEMBLY FOR OPTION /PARITH/OFF
+!|====================================================================
+      SUBROUTINE I7ASS0_STS(A ,STIFN, load_arr, node_arr, count, MAX_STS_SIZE_ACTUAL)
+C-----------------------------------------------
+C   M o d u l e s
+C-----------------------------------------------
+      USE TRI7BOX
+C-----------------------------------------------
+C   I m p l i c i t   T y p e s
+C-----------------------------------------------
+#include      "implicit_f.inc"
+C-----------------------------------------------
+C   G l o b a l   P a r a m e t e r s
+C-----------------------------------------------
+#include      "mvsiz_p.inc"
+C-----------------------------------------------
+C   C o m m o n   B l o c k s
+C-----------------------------------------------
+#include      "scr18_c.inc"
+#include      "com08_c.inc"
+C-----------------------------------------------
+C   D u m m y   A r g u m e n t s
+C-----------------------------------------------
+      my_real A(3,*),  STIFN(*)
+      my_real load_arr(MAX_STS_SIZE_ACTUAL,8,4) !(ELEMENT, 8 NODES, FORCE/STIFF)
+      INTEGER node_arr(MAX_STS_SIZE_ACTUAL*8) !node id array
+      INTEGER count, MAX_STS_SIZE_ACTUAL
+C-----------------------------------------------
+C   L o c a l   V a r i a b l e s
+C-----------------------------------------------
+      INTEGER I, J1, J, total_nodes, num_blocks, K
+      INTEGER, ALLOCATABLE :: node_arr_reshaped(:,:)
+      my_real :: sum_prim, sum_sec
+      my_real :: sum_prim_x, sum_prim_y, sum_prim_z
+      my_real :: sum_sec_x, sum_sec_y, sum_sec_z
+      my_real :: sum_all_x, sum_all_y, sum_all_z
+      INTEGER :: debug_count
+      my_real :: tolerance, A_before(3)
+      LOGICAL :: verify_ok
+      INTEGER :: K_verify
+      LOGICAL :: DEBUG_ASSEMBLY_DETAIL  ! Debug switch for detailed assembly output
+      LOGICAL :: DEBUG_ASSEMBLY_SUMMARY  ! Debug switch for assembly summary output
+!--------------------------------------------------      
+! Debug switches (set to .TRUE. to enable, .FALSE. to disable)
+      DEBUG_ASSEMBLY_DETAIL = .FALSE.  ! Set to .TRUE. to enable detailed assembly debug output
+      DEBUG_ASSEMBLY_SUMMARY = .FALSE.  ! Set to .TRUE. to enable assembly summary debug output
+!--------------------------------------------------      
+! Adjust count (refers to number of 8-node elements)      
+      COUNT = COUNT-1 !NR OF 8 NODE ELEMENTS 
+
+C     Initialize force balance counters
+      sum_prim = 0.0
+      sum_sec  = 0.0
+      sum_prim_x = 0.0
+      sum_prim_y = 0.0
+      sum_prim_z = 0.0
+      sum_sec_x = 0.0
+      sum_sec_y = 0.0
+      sum_sec_z = 0.0
+      sum_all_x = 0.0
+      sum_all_y = 0.0
+      sum_all_z = 0.0
+      debug_count = 0
+      tolerance = 1.0d-10
+
+C Get total number of node indices and number of 8-node blocks
+      total_nodes = MAX_STS_SIZE_ACTUAL * 8
+      num_blocks = MAX_STS_SIZE_ACTUAL
+     
+C Assembly loop: add values from load_arr to global force (A) and stiffness (STIFN)      
+      DO I = 1, COUNT!*8
+          IF (node_arr((I-1)*8 + 1) <= 0) EXIT  ! Check for valid element
+
+C         Debug: Print first 3 elements
+          IF (DEBUG_ASSEMBLY_DETAIL .AND. I <= 3) THEN
+            WRITE(*,*) "----------------------------------------"
+            WRITE(*,'("I7ASS0_STS: Assembling element ",I0)') I
+            WRITE(*,'("  Node IDs: ",8I8)') 
+     &            (node_arr((I-1)*8 + J), J=1,8)
+          ENDIF
+
+            DO J = 1, 8
+              J1 = node_arr((I-1)*8 + J)
+              IF (J1 <= 0) CYCLE  ! Skip invalid node
+
+C             Accumulate forces for balance check
+              sum_all_x = sum_all_x + load_arr(I, J, 1)
+              sum_all_y = sum_all_y + load_arr(I, J, 2)
+              sum_all_z = sum_all_z + load_arr(I, J, 3)
+
+C             Separate primary (nodes 1-4) and secondary (nodes 5-8) forces
+              IF (J <= 4) THEN
+                sum_prim = sum_prim + load_arr(I, J, 3)  ! Z component
+                sum_prim_x = sum_prim_x + load_arr(I, J, 1)
+                sum_prim_y = sum_prim_y + load_arr(I, J, 2)
+                sum_prim_z = sum_prim_z + load_arr(I, J, 3)
+              ELSE
+                sum_sec = sum_sec + load_arr(I, J, 3)    ! Z component
+                sum_sec_x = sum_sec_x + load_arr(I, J, 1)
+                sum_sec_y = sum_sec_y + load_arr(I, J, 2)
+                sum_sec_z = sum_sec_z + load_arr(I, J, 3)
+              ENDIF
+
+C             Debug: Print forces for first element, first 2 nodes
+              IF (DEBUG_ASSEMBLY_DETAIL .AND. I == 1 .AND. J <= 2) THEN
+                A_before(1) = A(1, J1)
+                A_before(2) = A(2, J1)
+                A_before(3) = A(3, J1)
+                WRITE(*,'("    Node ",I0," (ID=",I0,"):")') J, J1
+                WRITE(*,'("      load_arr(",I0,",",I0,",1:3) = ",3E12.5)') 
+     &              I, J, (load_arr(I, J, K), K=1,3)
+                WRITE(*,'("      A(1:3,",I0,") BEFORE = ",3E12.5)') 
+     &              J1, (A_before(K), K=1,3)
+              ENDIF
+
+              A(1, J1) = A(1, J1) + load_arr(I, J, 1)    ! X component
+              A(2, J1) = A(2, J1) + load_arr(I, J, 2)    ! Y component
+              A(3, J1) = A(3, J1) + load_arr(I, J, 3)    ! Z component
+              STIFN(J1) = STIFN(J1) + load_arr(I, J, 4)  ! Stiffness
+
+C             Debug: Print forces after assembly
+              IF (DEBUG_ASSEMBLY_DETAIL .AND. I == 1 .AND. J <= 2) THEN
+                verify_ok = .TRUE.
+                DO K_verify = 1, 3
+                  IF (ABS(A(K_verify, J1) - 
+     &                (A_before(K_verify) + load_arr(I, J, K_verify))) 
+     &                >= 1.0d-10) THEN
+                    verify_ok = .FALSE.
+                  ENDIF
+                ENDDO
+                WRITE(*,'("      A(1:3,",I0,") AFTER  = ",3E12.5)') 
+     &              J1, (A(K, J1), K=1,3)
+                WRITE(*,'("      Increment = ",3E12.5)') 
+     &              load_arr(I, J, 1), load_arr(I, J, 2), load_arr(I, J, 3)
+                WRITE(*,'("      Verification: ",L1)') verify_ok
+              ENDIF
+
+              debug_count = debug_count + 1
+            END DO
+      END DO
+
+C     Print force balance to terminal
+      WRITE(*,*) 'SUM OF ASSEMBLED PRIMARY FORCES (Z):', sum_prim
+      WRITE(*,*) 'SUM OF ASSEMBLED SECONDARY FORCES (Z):', sum_sec
+      WRITE(*,*)
+C     Print comprehensive force balance
+      IF (DEBUG_ASSEMBLY_SUMMARY) THEN
+        WRITE(*,*) "========================================"
+        WRITE(*,*) "I7ASS0_STS: ASSEMBLY SUMMARY"
+        WRITE(*,*) "========================================"
+        WRITE(*,'("  Elements processed: ",I0)') COUNT
+        WRITE(*,'("  Nodes assembled: ",I0)') debug_count
+        WRITE(*,*) "----------------------------------------"
+        WRITE(*,'("  Primary forces (X, Y, Z): ",3E15.8)') 
+     &    sum_prim_x, sum_prim_y, sum_prim_z
+        WRITE(*,'("  Secondary forces (X, Y, Z): ",3E15.8)') 
+     &    sum_sec_x, sum_sec_y, sum_sec_z
+        WRITE(*,'("  Total forces (X, Y, Z): ",3E15.8)') 
+     &    sum_all_x, sum_all_y, sum_all_z
+        WRITE(*,'("  Balance (Primary + Secondary): ",3E15.8)') 
+     &    sum_prim_x+sum_sec_x, sum_prim_y+sum_sec_y, sum_prim_z+sum_sec_z
+        WRITE(*,'("  Expected balance: ~0 (action-reaction)")')
+        WRITE(*,'("  Error (should be < 1e-10): ",3E15.8)') 
+     &    ABS(sum_prim_x+sum_sec_x), 
+     &    ABS(sum_prim_y+sum_sec_y), 
+     &    ABS(sum_prim_z+sum_sec_z)
+      
+C     Validation check
+        IF (ABS(sum_prim_x + sum_sec_x) > tolerance .OR.
+     &    ABS(sum_prim_y + sum_sec_y) > tolerance .OR.
+     &    ABS(sum_prim_z + sum_sec_z) > tolerance) THEN
+          WRITE(*,*) "WARNING: Force balance error detected!"
+          WRITE(*,'("  Primary + Secondary should be ~0")')
+        ELSE
+          WRITE(*,*) "OK: Force balance verified (within tolerance)"
+        ENDIF
+        WRITE(*,*) "========================================"
+        WRITE(*,*)
+      ENDIF
+
+      RETURN
+      END
 C
 !||====================================================================
 !||    i7ass05   ../engine/source/interfaces/int07/i7ass3.F
