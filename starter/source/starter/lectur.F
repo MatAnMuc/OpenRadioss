@@ -823,6 +823,39 @@ C-----------------------------------------------
      *        ISOLNOD,ISOLOFF,ISHEOFF,ITRUOFF,IPOUOFF,
      *        IRESOFF,ITRIOFF,IGRNRBY,IQUAOFF
 C
+      INTEGER MAXQ1NPCTRL,
+     .        SQ1NPBEZ_L
+
+C     Hardcoded parameters for Q1Np generation from surface, TODO
+      INTEGER ISURF_ID_TEST
+      PARAMETER (ISURF_ID_TEST=1) !Just set it a high number to skip smoothing
+      INTEGER P_TEST,Q_TEST
+      PARAMETER (P_TEST=2,Q_TEST=2)
+      INTEGER NSEG_SURF
+      INTEGER NX_EST,NY_EST
+      INTEGER NCP_U_EST,NCP_V_EST
+      INTEGER NKNOT_U_EST,NKNOT_V_EST
+      INTEGER NUMNOD_OLD, NUMNOD_EST, NUMNOD_CP_ADDED
+      INTEGER SX_OLD, SV_OLD, SD_OLD, SMS_OLD, SIN_OLD, SVR_OLD, SDR_OLD
+      INTEGER SX_NEW, SV_NEW, SD_NEW, SMS_NEW, SIN_NEW, SVR_NEW, SDR_NEW
+      INTEGER FIRST_ZERO_NODE, SITABM1_NEW
+      INTEGER, ALLOCATABLE :: IWCONT_TMP(:), IWCIN2_TMP(:)
+      INTEGER, ALLOCATABLE :: IKINE1LAG_TMP(:), DSDOF_TMP(:), DSDOF_NEW(:)
+      INTEGER, ALLOCATABLE :: ITAB_NEW(:), ITABM1_NEW(:)
+      my_real, ALLOCATABLE :: X_SAVE(:), V_SAVE(:), D_SAVE(:), MS_SAVE(:)
+      my_real, ALLOCATABLE :: IN_SAVE(:), VR_SAVE(:), DR_SAVE(:), XYZREF_SAVE(:)
+      INTEGER IEL, IEL_HEX8, OFFSET_CTRL, OFFSET_BULK, N_CTRL
+      INTEGER NODE_BULK(4), NODE_CP
+      INTEGER NP_U_Q1NP, NP_V_Q1NP, NP_T_Q1NP
+      INTEGER GP_INDEX, IT
+C
+      INTEGER, DIMENSION(:,:), ALLOCATABLE :: KQ1NP_TAB
+      INTEGER, DIMENSION(:),   ALLOCATABLE :: IQ1NP_TAB
+      INTEGER, DIMENSION(:),   ALLOCATABLE :: IQ1NP_BULK_TAB
+      my_real, DIMENSION(:),   ALLOCATABLE, TARGET :: Q1NP_KTAB
+      my_real, DIMENSION(:),   ALLOCATABLE :: Q1NP_WTAB
+      my_real, DIMENSION(:,:), ALLOCATABLE :: Q1NP_CPTAB
+C
       INTEGER(KIND=8) :: KVOISPH8,NUMSPH8,SIXSP8,LIMIT8
       INTEGER :: INTEGER_LIMIT32
 
@@ -3596,6 +3629,480 @@ C---      fill next level
           CALL HM_READ_SURFSURF(IGRSURF, INSEG, FLAGG, ICOUNT, ITER, NSETS, LSUBMODEL)
 C---
         ENDDO
+      ENDIF
+
+C--------------------------------------------
+C     GENERATE Q1NP ELEMENTS FROM SURFACE (ENRICHED HEX)
+C     Elements generated internally from surface definition
+C     Only smooth surface with internal index = ISURF_ID_TEST (currently 1)
+C     NOTE: This must be called AFTER surfaces are read (HM_READ_SURF)
+C--------------------------------------------
+      
+      IF (NSURF >= ISURF_ID_TEST) THEN
+        NSEG_SURF = IGRSURF(ISURF_ID_TEST)%NSEG
+        WRITE(*,*) '=========================================='
+        WRITE(*,*) 'Q1NP Surface Smoothing:'
+        WRITE(*,'(A,I0)') '  Surface ID (from input file): ', IGRSURF(ISURF_ID_TEST)%ID
+        WRITE(*,'(A,I0)') '  Number of segments: ', NSEG_SURF
+        WRITE(*,*) '=========================================='
+        IF (NSEG_SURF > 0) THEN
+
+C         Estimate grid dimensions: assume square grid
+          NX_EST = INT(SQRT(REAL(NSEG_SURF)))
+          NY_EST = NX_EST
+          IF (NX_EST*NY_EST < NSEG_SURF) NX_EST = NX_EST + 1
+          IF (NX_EST*NY_EST < NSEG_SURF) NY_EST = NY_EST + 1
+
+C         Number of Q1Np elements = number of surface segments
+          NUMELQ1NP_G = NSEG_SURF
+
+C         Control points: ncp = ne + p (from Python algorithm)
+          NCP_U_EST = NX_EST + P_TEST
+          NCP_V_EST = NY_EST + Q_TEST
+          MAXQ1NPCTRL = (P_TEST+1)*(Q_TEST+1)
+
+C         Unique control points shared across the grid
+          SQ1NPCTRL_SHARED_G = NCP_U_EST * NCP_V_EST
+
+C         Note: ITABM1 will be resized and rebuilt after CP promotion
+C         (see Step 7 below, after ITAB update)
+C         IQ1NP_TAB now stores only per-element CP connectivity
+          SQ1NPCTRL_L_G = NUMELQ1NP_G * MAXQ1NPCTRL
+          SIQ1NP_G = SQ1NPCTRL_L_G
+
+C         Separate storage for the legacy 4 bulk nodes per element
+          SQ1NPBULK_G = NBULKQ1NP * NUMELQ1NP_G
+
+C         Weights: one per unique control point
+          SQ1NPWEIGHT_L_G = SQ1NPCTRL_SHARED_G
+
+C         Knot vectors: U and V concatenated
+          NKNOT_U_EST = NX_EST + 2*P_TEST + 1
+          NKNOT_V_EST = NY_EST + 2*Q_TEST + 1
+          SQ1NPKNOT_L_G = NKNOT_U_EST + NKNOT_V_EST
+          SKQ1NP_G      = NKQ1NP * NUMELQ1NP_G
+
+          DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
+     .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
+          ALLOCATE(KQ1NP_TAB(NKQ1NP,NUMELQ1NP_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='KQ1NP_TAB')
+          ALLOCATE(IQ1NP_TAB(SIQ1NP_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='IQ1NP_TAB')
+          ALLOCATE(IQ1NP_BULK_TAB(SQ1NPBULK_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='IQ1NP_BULK_TAB')
+          ALLOCATE(Q1NP_WTAB(SQ1NPWEIGHT_L_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='Q1NP_WTAB')
+          ALLOCATE(Q1NP_KTAB(SQ1NPKNOT_L_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='Q1NP_KTAB')
+          IF(SQ1NPCTRL_SHARED_G > 0) THEN
+            ALLOCATE(Q1NP_CPTAB(3,SQ1NPCTRL_SHARED_G) ,STAT=stat)
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                              MSGTYPE=MSGERROR,
+     .                              C1='Q1NP_CPTAB')
+          ENDIF
+
+C         Initialize arrays to zero
+          KQ1NP_TAB(:,:) = 0
+          IF(SIQ1NP_G > 0) IQ1NP_TAB = 0
+          IF(SQ1NPBULK_G > 0) IQ1NP_BULK_TAB = 0
+          IF(SQ1NPWEIGHT_L_G > 0) Q1NP_WTAB = ZERO
+          IF(SQ1NPKNOT_L_G > 0) Q1NP_KTAB = ZERO
+          IF(ALLOCATED(Q1NP_CPTAB)) Q1NP_CPTAB = ZERO
+
+C         Generate Q1NP elements from surface
+          CALL GENQ1NP(IGRSURF,IXS,X,ITAB,IPART,
+     .                 IPARTS,
+     .                 KQ1NP_TAB,IQ1NP_TAB,IQ1NP_BULK_TAB,
+     .                 Q1NP_WTAB,Q1NP_KTAB,Q1NP_CPTAB,
+     .                 SQ1NPWEIGHT_L_G,NUMELQ1NP_G)
+
+C         Store Q1NP_KTAB pointer and grid dimensions in Q1NP_RESTART_MOD
+          Q1NP_KTAB_G => Q1NP_KTAB
+          Q1NP_NX_G = NX_EST
+          Q1NP_NY_G = NY_EST
+
+          CALL SET_Q1NP_COUNTS(NUMELQ1NP_G,SKQ1NP_G,SIQ1NP_G,
+     .                         SQ1NPBULK_G,SQ1NPCTRL_SHARED_G,
+     .                         SQ1NPCTRL_L_G,SQ1NPWEIGHT_L_G,
+     .                         SQ1NPKNOT_L_G)
+          
+C         Define Gauss scheme for Q1Np elements
+          NP_U_Q1NP = P_TEST + 1
+          NP_V_Q1NP = Q_TEST + 1
+          NP_T_Q1NP = 2
+          CALL Q1NP_INIT_GAUSS_SCHEME_STARTER(NP_U_Q1NP,NP_V_Q1NP,
+     .                                       NP_T_Q1NP)
+          
+C         Optional debug: print Gauss points in reference coordinates
+          IF (IDEBUG_Q1NP > 0) THEN
+            WRITE(*,'(A)') ' '
+            print *, '=============================================='
+            print *, 'NEW Q1NP-GAUSS-SCHEMA:'
+            print *, '=============================================='
+            WRITE(*,'(A)') '   ---- Q1NP GAUSS QUADRATURE SCHEME ----'
+            WRITE(*,'(A, I3, 3A, I3, 3A, I3)') 
+     .        '      U points: ', Q1NP_NP_U_G, 
+     .        '   |  V points: ', Q1NP_NP_V_G, 
+     .        '   |  T points: ', Q1NP_NP_T_G
+            WRITE(*,'(A)')  '--------------------------------------------------------------------------'
+            WRITE(*,'(A)')  '  #  i_U  i_V  i_T     GP_U      GP_V      GP_T    GAUSS_WEIGHT'
+            WRITE(*,'(A)')  '--------------------------------------------------------------------------'
+            GP_INDEX = 0
+            DO IT = 1, Q1NP_NP_T_G
+              DO J = 1, Q1NP_NP_V_G
+                DO I = 1, Q1NP_NP_U_G
+                  GP_INDEX = GP_INDEX + 1
+C                 Gauss weight = product of 1D weights (Q1NP_WTAB is NURBS
+C                 control-point weights, size SQ1NPCTRL_SHARED_G, not per GP)
+                  WRITE(*,'(I4,3I5,4F10.3)')
+     .              GP_INDEX, I, J, IT,
+     .              Q1NP_GP_U_G(I), Q1NP_GP_V_G(J), Q1NP_GP_T_G(IT),
+     .              Q1NP_GW_U_G(I) *Q1NP_GW_V_G(J)* Q1NP_GW_T_G(IT)
+                ENDDO
+              ENDDO
+            ENDDO
+            WRITE(*,'(A)')  '--------------------------------------------------------------------------'
+          ENDIF
+
+          ! CHECKED OK
+          
+C         Promote control points to real mesh nodes
+          IF (NUMELQ1NP_G > 0 .AND. SQ1NPCTRL_SHARED_G > 0) THEN
+            NUMNOD_OLD = NUMNOD
+            NUMNOD_EST = NUMNOD + SQ1NPCTRL_SHARED_G
+              SX_OLD  = SX
+              SV_OLD  = SV
+              SD_OLD  = SD
+              SMS_OLD = SMS
+              SIN_OLD = SIN
+              SVR_OLD = SVR
+              SDR_OLD = SDR
+
+              SX_NEW  = 3*NUMNOD_EST
+              SV_NEW  = 3*NUMNOD_EST
+              SD_NEW  = 5*NUMNOD_EST
+              SMS_NEW = NUMNOD_EST
+              SIN_NEW = NUMNOD_EST*MAX(IRODDL,IRODDL0)
+              SVR_NEW = 3*NUMNOD_EST*MAX(IRODDL,IRODDL0)
+              IF(ISECUT>0 .OR. IISROT>0 .OR. IMPOSE_DR>0 .OR. IDROT == 1) THEN
+                SDR_NEW = 3*NUMNOD_EST*MAX(IRODDL,IRODDL0)
+              ELSE
+                SDR_NEW = 0
+              ENDIF
+
+C=======================================================================
+C           Reallocate node arrays to accommodate new control point nodes
+C=======================================================================
+C           Step 1: Save old data to temporary arrays
+C=======================================================================
+              ALLOCATE(X_SAVE(SX_OLD), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='X_SAVE')
+              X_SAVE(1:SX_OLD) = X(1:SX_OLD)
+              
+              ALLOCATE(V_SAVE(SV_OLD), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='V_SAVE')
+              V_SAVE(1:SV_OLD) = V(1:SV_OLD)
+              
+              ALLOCATE(MS_SAVE(SMS_OLD), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='MS_SAVE')
+              MS_SAVE(1:SMS_OLD) = MS(1:SMS_OLD)
+              
+              IF(SD_OLD > 0) THEN
+                ALLOCATE(D_SAVE(SD_OLD), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='D_SAVE')
+                D_SAVE(1:SD_OLD) = D(1:SD_OLD)
+              ENDIF
+              
+              IF(SIN_OLD > 0) THEN
+                ALLOCATE(IN_SAVE(SIN_OLD), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='IN_SAVE')
+                IN_SAVE(1:SIN_OLD) = IN(1:SIN_OLD)
+              ENDIF
+              
+              IF(SVR_OLD > 0) THEN
+                ALLOCATE(VR_SAVE(SVR_OLD), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='VR_SAVE')
+                VR_SAVE(1:SVR_OLD) = VR(1:SVR_OLD)
+              ENDIF
+              
+              IF(SDR_OLD > 0) THEN
+                ALLOCATE(DR_SAVE(SDR_OLD), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='DR_SAVE')
+                DR_SAVE(1:SDR_OLD) = DR(1:SDR_OLD)
+              ENDIF
+              
+              ALLOCATE(XYZREF_SAVE(SX_OLD), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='XYZREF_SAVE')
+              XYZREF_SAVE(1:SX_OLD) = XYZREF(1:SX_OLD)
+
+C=======================================================================
+C           Step 2: Reallocate arrays to new size
+C=======================================================================
+              DEALLOCATE(X)
+              ALLOCATE(X(SX_NEW), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='X')
+              
+              DEALLOCATE(V)
+              ALLOCATE(V(SV_NEW), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='V')
+              
+              IF(SD_NEW > 0) THEN
+                DEALLOCATE(D)
+                ALLOCATE(D(SD_NEW), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='D')
+              ENDIF
+              
+              DEALLOCATE(MS)
+              ALLOCATE(MS(SMS_NEW), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='MS')
+              
+              IF(SIN_NEW > 0) THEN
+                DEALLOCATE(IN)
+                ALLOCATE(IN(SIN_NEW), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='IN')
+              ENDIF
+              
+              IF(SVR_NEW > 0) THEN
+                DEALLOCATE(VR)
+                ALLOCATE(VR(SVR_NEW), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='VR')
+              ENDIF
+              
+              IF(SDR_NEW > 0) THEN
+                DEALLOCATE(DR)
+                ALLOCATE(DR(SDR_NEW), STAT=stat)
+                IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                    MSGTYPE=MSGERROR, C1='DR')
+              ENDIF
+              
+              DEALLOCATE(XYZREF)
+              ALLOCATE(XYZREF(SX_NEW), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='XYZREF')
+
+C=======================================================================
+C           Step 3: Copy old data back and initialize new indices to zero
+C=======================================================================
+              X(1:SX_OLD) = X_SAVE(1:SX_OLD)
+              X(SX_OLD+1:SX_NEW) = ZERO
+              
+              V(1:SV_OLD) = V_SAVE(1:SV_OLD)
+              V(SV_OLD+1:SV_NEW) = ZERO
+              
+              IF(SD_NEW > 0) THEN
+                IF(SD_OLD > 0) THEN
+                  D(1:SD_OLD) = D_SAVE(1:SD_OLD)
+                  D(SD_OLD+1:SD_NEW) = ZERO
+                ELSE
+                  D(1:SD_NEW) = ZERO
+                ENDIF
+              ENDIF
+              
+              MS(1:SMS_OLD) = MS_SAVE(1:SMS_OLD)
+              MS(SMS_OLD+1:SMS_NEW) = ZERO
+              
+              IF(SIN_NEW > 0) THEN
+                IF(SIN_OLD > 0) THEN
+                  IN(1:SIN_OLD) = IN_SAVE(1:SIN_OLD)
+                  IN(SIN_OLD+1:SIN_NEW) = ZERO
+                ELSE
+                  IN(1:SIN_NEW) = ZERO
+                ENDIF
+              ENDIF
+              
+              IF(SVR_NEW > 0) THEN
+                IF(SVR_OLD > 0) THEN
+                  VR(1:SVR_OLD) = VR_SAVE(1:SVR_OLD)
+                  VR(SVR_OLD+1:SVR_NEW) = ZERO
+                ELSE
+                  VR(1:SVR_NEW) = ZERO
+                ENDIF
+              ENDIF
+              
+              IF(SDR_NEW > 0) THEN
+                IF(SDR_OLD > 0) THEN
+                  DR(1:SDR_OLD) = DR_SAVE(1:SDR_OLD)
+                  DR(SDR_OLD+1:SDR_NEW) = ZERO
+                ELSE
+                  DR(1:SDR_NEW) = ZERO
+                ENDIF
+              ENDIF
+              
+              XYZREF(1:SX_OLD) = XYZREF_SAVE(1:SX_OLD)
+              XYZREF(SX_OLD+1:SX_NEW) = ZERO
+
+C=======================================================================
+C           Step 4: Deallocate temporary save arrays
+C=======================================================================
+              DEALLOCATE(X_SAVE)
+              DEALLOCATE(V_SAVE)
+              DEALLOCATE(MS_SAVE)
+              IF(ALLOCATED(D_SAVE)) DEALLOCATE(D_SAVE)
+              IF(ALLOCATED(IN_SAVE)) DEALLOCATE(IN_SAVE)
+              IF(ALLOCATED(VR_SAVE)) DEALLOCATE(VR_SAVE)
+              IF(ALLOCATED(DR_SAVE)) DEALLOCATE(DR_SAVE)
+              DEALLOCATE(XYZREF_SAVE)
+
+              SX  = SX_NEW
+              SV  = SV_NEW
+              SD  = SD_NEW
+              SMS = SMS_NEW
+              SIN = SIN_NEW
+              SVR = SVR_NEW
+              SDR = SDR_NEW
+
+C=======================================================================
+C           Step 5: Reallocate kinematic arrays after control point promotion
+C=======================================================================
+C           Reallocate kinematic arrays after control point promotion
+              ALLOCATE(IWCONT_TMP(5*NUMNOD_EST), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='IWCONT_TMP')
+              IWCONT_TMP(1:5*NUMNOD_OLD) = IWCONT(1:5*NUMNOD_OLD)
+              IWCONT_TMP(5*NUMNOD_OLD+1:5*NUMNOD_EST) = 0
+              DEALLOCATE(IWCONT)
+              CALL MOVE_ALLOC(IWCONT_TMP, IWCONT)
+              
+              ALLOCATE(IWCIN2_TMP(2*NUMNOD_EST), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='IWCIN2_TMP')
+              IWCIN2_TMP(1:2*NUMNOD_OLD) = IWCIN2(1:2*NUMNOD_OLD)
+              IWCIN2_TMP(2*NUMNOD_OLD+1:2*NUMNOD_EST) = 0
+              DEALLOCATE(IWCIN2)
+              CALL MOVE_ALLOC(IWCIN2_TMP, IWCIN2)
+              
+              ALLOCATE(IKINE1LAG_TMP(3*NUMNOD_EST), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                                  MSGTYPE=MSGERROR, C1='IKINE1LAG_TMP')
+              IKINE1LAG_TMP(1:3*NUMNOD_OLD) = IKINE1LAG(1:3*NUMNOD_OLD)
+              IKINE1LAG_TMP(3*NUMNOD_OLD+1:3*NUMNOD_EST) = 0
+              DEALLOCATE(IKINE1LAG)
+              CALL MOVE_ALLOC(IKINE1LAG_TMP, IKINE1LAG)
+C
+            CALL Q1NP_PROMOTE_CP_TO_NODES(
+     .                   NUMNOD_OLD, NUMNOD,
+     .                   X, V, D, MS, IN, VR, DR,
+     .                   Q1NP_CPTAB, IQ1NP_TAB, IQ1NP_BULK_TAB, KQ1NP_TAB,
+     .                   IXS, NUMELQ1NP_G, NUMNOD_CP_ADDED,
+     .                   SX, SV, SD, SMS, SIN, SVR, SDR)
+            
+
+C=======================================================================
+C           Ensure DSDOF matches actual NUMNOD after promotion
+C=======================================================================
+            IF (NUMNOD_CP_ADDED > 0) THEN
+              IF (ALLOCATED(DSDOF)) THEN
+                IF (SIZE(DSDOF) < NUMNOD) THEN
+                  ALLOCATE(DSDOF_NEW(NUMNOD), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='DSDOF_NEW')
+                  ELSE
+                  DSDOF_NEW(1:SIZE(DSDOF)) = DSDOF(1:SIZE(DSDOF))
+                  DSDOF_NEW(SIZE(DSDOF)+1:NUMNOD) = 0
+                  DEALLOCATE(DSDOF, STAT=stat)
+                    CALL MOVE_ALLOC(DSDOF_NEW, DSDOF)
+                  ENDIF
+                ENDIF
+              ELSE
+C                 DSDOF was not allocated, allocate it now
+                ALLOCATE(DSDOF(NUMNOD), STAT=stat)
+                IF(STAT /= 0) THEN
+                  CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                        MSGTYPE=MSGERROR, C1='DSDOF')
+                ELSE
+                DSDOF(1:NUMNOD) = 0
+                ENDIF
+              ENDIF
+            ENDIF
+            
+C=======================================================================
+C           Step 6: After Q1NP CP promotion, update ITAB and ITABM1 to include new nodes
+C=======================================================================
+            IF (NUMNOD_CP_ADDED > 0) THEN
+C             Reallocate ITAB to include new nodes
+              ALLOCATE(ITAB_NEW(NUMNOD), STAT=stat)
+              IF(STAT /= 0) THEN
+                CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                      MSGTYPE=MSGERROR, C1='ITAB_NEW')
+              ELSE
+                  ITAB_NEW(1:NUMNOD_OLD) = ITAB(1:NUMNOD_OLD)
+C               Assign user IDs to new CP nodes (starting from max existing user ID + 1)
+                MAX_USER_ID = MAXVAL(ITAB(1:NUMNOD_OLD))
+              DO I = NUMNOD_OLD + 1, NUMNOD
+                ITAB_NEW(I) = MAX_USER_ID + (I - NUMNOD_OLD)
+              ENDDO
+              
+C               Replace ITAB with new array
+                IF (ALLOCATED(ITAB)) DEALLOCATE(ITAB, STAT=stat)
+                  ALLOCATE(ITAB(NUMNOD), STAT=stat)
+                IF(STAT /= 0) THEN
+                  CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                        MSGTYPE=MSGERROR, C1='ITAB')
+                  DEALLOCATE(ITAB_NEW, STAT=stat)
+                ELSE
+                  ITAB(1:NUMNOD) = ITAB_NEW(1:NUMNOD)
+                    DEALLOCATE(ITAB_NEW, STAT=stat)
+                  
+C=======================================================================
+C                 Step 7: Rebuild ITABM1 - resize if needed, then rebuild
+C=======================================================================
+                  SITABM1 = 2*NUMNOD
+                  
+                  IF (.NOT. ALLOCATED(ITABM1) .OR. SIZE(ITABM1) < SITABM1) THEN
+                    IF (ALLOCATED(ITABM1)) DEALLOCATE(ITABM1, STAT=stat)
+                    ALLOCATE(ITABM1(SITABM1), STAT=stat)
+                    IF(STAT /= 0) THEN
+                      CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR, C1='ITABM1')
+                    ENDIF
+                  ENDIF
+                  
+C                 Rebuild ITABM1 mapping (only if allocation succeeded)
+                  IF (ALLOCATED(ITABM1) .AND. SIZE(ITABM1) >= SITABM1) THEN
+                    CALL CONSTIT(ITAB, ITABM1, NUMNOD)
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+                                
+C=======================================================================
+C           Step 8: Update NUMNOD0
+C=======================================================================
+            IF (NUMNOD_CP_ADDED > 0) THEN
+              NUMNOD0 = NUMNOD
+            ENDIF
+          ENDIF
+        ELSE
+          CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
+        ENDIF
+      ELSE
+        PRINT*, 'Q1NP DEBUG: Surface ID=', ISURF_ID_TEST, ' not found'
+        CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
       ENDIF
 
       NSEGS=NPART

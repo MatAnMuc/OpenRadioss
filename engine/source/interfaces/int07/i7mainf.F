@@ -160,6 +160,57 @@ C-----------------------------------------------
       TYPE(INTBUF_FRIC_STRUCT_), TARGET, DIMENSION(NINTERFRIC) ::  INTBUF_FRIC_TAB
       TYPE (GROUP_)  , DIMENSION(NGRBRIC) :: IGRBRIC
 C-----------------------------------------------
+C     N E W   V a r i a b l e s
+C-----------------------------------------------
+      my_real, DIMENSION(:,:,:), ALLOCATABLE :: CONT_ELEMENT  !contact element array
+      my_real, DIMENSION(:,:,:), ALLOCATABLE :: load_arr     !load array
+      INTEGER, DIMENSION(:,:),     ALLOCATABLE :: CAND_SEC_SEG_ID   !secondary segment nodes
+      INTEGER, DIMENSION(:,:),     ALLOCATABLE :: CAND_MST_SEG_ID   !primary segment nodes
+      INTEGER, DIMENSION(:),       ALLOCATABLE :: CAND_SEC_SEG      !secondary segment nodes
+      INTEGER, DIMENSION(:),       ALLOCATABLE :: node_id_load      !node id array (8 nodes per element)
+      INTEGER COUNT !count for the number of contact elements found
+      INTEGER ASS_FLAG !Assembly flag, 0 if old Assembly, 1 if new assembly algorithm called
+      INTEGER :: MAX_STS_SIZE_ACTUAL !actual calculated sts array size needed      
+      INTEGER OPTION !option for the contact algorithm
+      INTEGER IMPACT_glob !global impact flag, 0 if no impact, 1 if impact
+      LOGICAL :: STS_ACTIVE !true if STS is active, false if NTS is active
+      INTEGER :: IP_MAX
+C-----------------------------------------------
+C   H i s t o r y   V a r i a b l e s   f o r   F r i c t i o n
+C-----------------------------------------------
+      REAL*8, DIMENSION(:,:,:), ALLOCATABLE, SAVE :: XI1_HIST  ! History of xi1 per Gauss point
+      REAL*8, DIMENSION(:,:,:), ALLOCATABLE, SAVE :: XI2_HIST  ! History of xi2 per Gauss point
+      REAL*8, DIMENSION(:,:,:), ALLOCATABLE, SAVE :: TTRIAL1_HIST  ! History of T_trial(1) per Gauss point
+      REAL*8, DIMENSION(:,:,:), ALLOCATABLE, SAVE :: TTRIAL2_HIST  ! History of T_trial(2) per Gauss point
+      INTEGER, SAVE :: MAX_STS_SIZE_HIST = 0  ! Stored size for history arrays
+      INTEGER, SAVE :: IP_MAX_HIST = 0        ! Stored quadrature order
+C-----------------------------------------------
+C   G l o b a l   G a u s s   P o i n t   S t a t e   (N e w   S T S)
+C-----------------------------------------------
+C  1D arrays indexed by a global Gauss point index:
+C     gp_index = secondary_element_id * (IP_MAX*IP_MAX) + local_gp_index
+C  where local_gp_index = (z-1)*IP_MAX + (q-1)
+C-----------------------------------------------
+      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_GLOBAL_ID
+      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_SECONDARY_EL_ID
+      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_MASTER_EL_ID
+      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_MASTER_EL_ID_PREV
+
+      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI1_GLOBAL
+      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI2_GLOBAL
+      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI1_GLOBAL_PREV
+      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI2_GLOBAL_PREV
+
+      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI1_PERIOD
+      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI2_PERIOD
+
+      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_TTRIAL1_HIST
+      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_TTRIAL2_HIST
+
+      LOGICAL, DIMENSION(:), ALLOCATABLE, SAVE :: GP_IS_STICKING
+      LOGICAL, DIMENSION(:), ALLOCATABLE, SAVE :: GP_INITIALIZED
+      INTEGER :: MAX_GLOBAL_GP
+C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
       INTEGER I, J, I_STOK, JLT_NEW, JLT , NFT, IVIS2,
@@ -212,7 +263,9 @@ C-----------------------------------------------
      .        PHI1(MVSIZ),PHI2(MVSIZ),PHI3(MVSIZ),PHI4(MVSIZ)
       my_real XFILTR_FRIC,FRIC_COEFS(MVSIZ,10),VISCFFRIC(MVSIZ),FRICC(MVSIZ),
      .        FRIC_COEFS2(MVSIZ,10),VISCFFRIC2(MVSIZ),FRICC2(MVSIZ),
-     .        DIR1(MVSIZ,3),DIR2(MVSIZ,3),DIR_FRICMI(MVSIZ,2)
+     .        DIR1(MVSIZ,3),DIR2(MVSIZ,3),DIR_FRICMI(MVSIZ,2),
+     .        XMU(MVSIZ), ! Effective friction coefficients for STS
+     .        ALPHA0, QFRICT
       INTEGER, DIMENSION(:) ,POINTER  :: TABCOUPLEPARTS_FRIC
       INTEGER, DIMENSION(:) ,POINTER  :: TABPARTS_FRIC 
       INTEGER, DIMENSION(:) ,POINTER  :: ADPARTS_FRIC 
@@ -610,8 +663,159 @@ C!$OMP ORDERED
      O          H3D_DATA          ,ELBUF_TAB         ,IDIR             )
             ENDIF
             
-          ELSE
-            CALL I7DST3(
+       ELSE ! NOT TYPE18
+
+
+C     The maximum number of contact pairs is limited by the number of candidates
+C
+      MAX_STS_SIZE_ACTUAL = 1  ! Minimum size
+      IF (INTBUF_TAB%S_CAND_N > 0) THEN
+        ! Maximum contact pairs cannot exceed number of candidates
+        MAX_STS_SIZE_ACTUAL = MAX(MAX_STS_SIZE_ACTUAL, INTBUF_TAB%S_CAND_N)
+      ENDIF
+      ! Add safety factor (some candidates might map to same segment pair, but we need buffer)
+      MAX_STS_SIZE_ACTUAL = MAX_STS_SIZE_ACTUAL * 2  ! Safety factor      
+
+      ! Adjust working array sizes to match MAX_STS_SIZE_ACTUAL
+      IF (ALLOCATED(CONT_ELEMENT)) DEALLOCATE(CONT_ELEMENT)
+      IF (ALLOCATED(load_arr))     DEALLOCATE(load_arr)
+      IF (ALLOCATED(CAND_SEC_SEG_ID)) DEALLOCATE(CAND_SEC_SEG_ID)
+      IF (ALLOCATED(CAND_MST_SEG_ID)) DEALLOCATE(CAND_MST_SEG_ID)
+      IF (ALLOCATED(CAND_SEC_SEG))    DEALLOCATE(CAND_SEC_SEG)
+      IF (ALLOCATED(node_id_load))    DEALLOCATE(node_id_load)
+
+      ALLOCATE(CONT_ELEMENT(MAX_STS_SIZE_ACTUAL,3,8))
+      ALLOCATE(load_arr(MAX_STS_SIZE_ACTUAL,8,4))
+      ALLOCATE(CAND_SEC_SEG_ID(MAX_STS_SIZE_ACTUAL,5))
+      ALLOCATE(CAND_MST_SEG_ID(MAX_STS_SIZE_ACTUAL,5))
+      ALLOCATE(CAND_SEC_SEG(MAX_STS_SIZE_ACTUAL))
+      ALLOCATE(node_id_load(MAX_STS_SIZE_ACTUAL*8))
+
+C-----------------------------------------------
+C   Allocate/Reallocate History Arrays for Friction
+C-----------------------------------------------
+      ! Quadrature order (currently fixed to 2, but make it flexible)
+      IP_MAX = 2  ! Current quadrature order
+      
+      ! Maximum number of Gauss points for STS pairs (all secondary elements)
+      ! MAX_GLOBAL_GP = MAX_STS_SIZE_ACTUAL * IP_MAX * IP_MAX
+      ! Used for 1D global Gauss point state arrays
+      MAX_GLOBAL_GP = MAX_STS_SIZE_ACTUAL * IP_MAX * IP_MAX
+      
+      ! Check if reallocation is needed for element-based history arrays
+      IF (.NOT. ALLOCATED(XI1_HIST) .OR. 
+     &    MAX_STS_SIZE_ACTUAL > MAX_STS_SIZE_HIST .OR.
+     &    IP_MAX /= IP_MAX_HIST) THEN
+        
+        ! Deallocate if already allocated
+        IF (ALLOCATED(XI1_HIST)) THEN
+          DEALLOCATE(XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
+        ENDIF
+        
+        ! Allocate with new size
+        ALLOCATE(XI1_HIST(MAX_STS_SIZE_ACTUAL, IP_MAX, IP_MAX))
+        ALLOCATE(XI2_HIST(MAX_STS_SIZE_ACTUAL, IP_MAX, IP_MAX))
+        ALLOCATE(TTRIAL1_HIST(MAX_STS_SIZE_ACTUAL, IP_MAX, IP_MAX))
+        ALLOCATE(TTRIAL2_HIST(MAX_STS_SIZE_ACTUAL, IP_MAX, IP_MAX))
+
+        ! Initialize to zero (will be set on first contact)
+        XI1_HIST = 0.d0
+        XI2_HIST = 0.d0
+        TTRIAL1_HIST = 0.d0
+        TTRIAL2_HIST = 0.d0
+        
+        ! Store current size
+        MAX_STS_SIZE_HIST = MAX_STS_SIZE_ACTUAL
+        IP_MAX_HIST = IP_MAX
+      ENDIF
+
+C-----------------------------------------------
+C   Allocate/Reallocate Global Gauss Point State Arrays
+C-----------------------------------------------
+      IF (.NOT. ALLOCATED(GP_XI1_GLOBAL) .OR.
+     &    MAX_STS_SIZE_ACTUAL > MAX_STS_SIZE_HIST .OR.
+     &    IP_MAX /= IP_MAX_HIST) THEN
+
+        ! Deallocate if already allocated
+        IF (ALLOCATED(GP_GLOBAL_ID))        DEALLOCATE(GP_GLOBAL_ID)
+        IF (ALLOCATED(GP_SECONDARY_EL_ID))  DEALLOCATE(GP_SECONDARY_EL_ID)
+        IF (ALLOCATED(GP_MASTER_EL_ID))     DEALLOCATE(GP_MASTER_EL_ID)
+        IF (ALLOCATED(GP_MASTER_EL_ID_PREV)) DEALLOCATE(GP_MASTER_EL_ID_PREV)
+
+        IF (ALLOCATED(GP_XI1_GLOBAL))       DEALLOCATE(GP_XI1_GLOBAL)
+        IF (ALLOCATED(GP_XI2_GLOBAL))       DEALLOCATE(GP_XI2_GLOBAL)
+        IF (ALLOCATED(GP_XI1_GLOBAL_PREV))  DEALLOCATE(GP_XI1_GLOBAL_PREV)
+        IF (ALLOCATED(GP_XI2_GLOBAL_PREV))  DEALLOCATE(GP_XI2_GLOBAL_PREV)
+
+        IF (ALLOCATED(GP_XI1_PERIOD))       DEALLOCATE(GP_XI1_PERIOD)
+        IF (ALLOCATED(GP_XI2_PERIOD))       DEALLOCATE(GP_XI2_PERIOD)
+
+        IF (ALLOCATED(GP_TTRIAL1_HIST))     DEALLOCATE(GP_TTRIAL1_HIST)
+        IF (ALLOCATED(GP_TTRIAL2_HIST))     DEALLOCATE(GP_TTRIAL2_HIST)
+
+        IF (ALLOCATED(GP_IS_STICKING))      DEALLOCATE(GP_IS_STICKING)
+        IF (ALLOCATED(GP_INITIALIZED))      DEALLOCATE(GP_INITIALIZED)
+
+        ! Allocate global Gauss point state arrays
+        ALLOCATE(GP_GLOBAL_ID       (MAX_GLOBAL_GP))
+        ALLOCATE(GP_SECONDARY_EL_ID (MAX_GLOBAL_GP))
+        ALLOCATE(GP_MASTER_EL_ID    (MAX_GLOBAL_GP))
+        ALLOCATE(GP_MASTER_EL_ID_PREV(MAX_GLOBAL_GP))
+
+        ALLOCATE(GP_XI1_GLOBAL      (MAX_GLOBAL_GP))
+        ALLOCATE(GP_XI2_GLOBAL      (MAX_GLOBAL_GP))
+        ALLOCATE(GP_XI1_GLOBAL_PREV (MAX_GLOBAL_GP))
+        ALLOCATE(GP_XI2_GLOBAL_PREV (MAX_GLOBAL_GP))
+
+        ALLOCATE(GP_XI1_PERIOD      (MAX_GLOBAL_GP))
+        ALLOCATE(GP_XI2_PERIOD      (MAX_GLOBAL_GP))
+
+        ALLOCATE(GP_TTRIAL1_HIST    (MAX_GLOBAL_GP))
+        ALLOCATE(GP_TTRIAL2_HIST    (MAX_GLOBAL_GP))
+
+        ALLOCATE(GP_IS_STICKING     (MAX_GLOBAL_GP))
+        ALLOCATE(GP_INITIALIZED     (MAX_GLOBAL_GP))
+
+        ! Initialize state
+        GP_GLOBAL_ID        = 0
+        GP_SECONDARY_EL_ID  = 0
+        GP_MASTER_EL_ID     = 0
+        GP_MASTER_EL_ID_PREV= 0
+
+        GP_XI1_GLOBAL       = 0.d0
+        GP_XI2_GLOBAL       = 0.d0
+        GP_XI1_GLOBAL_PREV  = 0.d0
+        GP_XI2_GLOBAL_PREV  = 0.d0
+
+        GP_XI1_PERIOD       = 0
+        GP_XI2_PERIOD       = 0
+
+        GP_TTRIAL1_HIST     = 0.d0
+        GP_TTRIAL2_HIST     = 0.d0
+
+        GP_IS_STICKING      = .FALSE.
+        GP_INITIALIZED      = .FALSE.
+      ENDIF
+
+C==========================================================
+C CONTACT ALGORITHM SELECTION
+C   STS_ACTIVE = .TRUE.  -> NEW STS (GAUSS/LOBATTO)
+C   STS_ACTIVE = .FALSE. -> OLD NTS
+C==========================================================
+
+        IF (.NOT. STS_ACTIVE) THEN
+C==========================================================
+C OLD NTS ALGORITHM
+C==========================================================
+        WRITE(*,*) 
+        WRITE(*,*) "***********************************"
+        WRITE(*,*) "NTS ALGORITHM STARTED"
+        WRITE(*,*) "***********************************"
+
+        !----------------------------------------------------------
+        ! Distance calculation and projection for contact detection
+        !----------------------------------------------------------  
+        CALL I7DST3(
      1        JLT          ,CAND_N_N,CAND_E_N,CN_LOC ,CE_LOC       ,
      2        X1           ,X2      ,X3      ,X4     ,Y1           ,
      3        Y2           ,Y3      ,Y4      ,Z1     ,Z2           ,
@@ -748,9 +952,141 @@ C!$OMP ORDERED
      K  INTBUF_TAB%RIGE      ,X         ,H3D_DATA  ,KNOTLOCPC ,
      L  KNOTLOCEL ,IFORM     ,NODADT_THERM) 
 
-            ENDIF
-          ENDIF
+           ENDIF !(JLT_NEW/=0) THEN
+      ELSE !STS_ACTIVE = .TRUE.
+C==========================================================
+C NEW STS ALGORITHM - UNIFIED FOR GAUSS AND LOBATTO
+C==========================================================
+C
 
+
+        ! Find contact partners/candidates only once
+        CALL REMAP_SEGMENTS_STS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG,
+     &   INTBUF_TAB%IRECTM, CONT_ELEMENT, COUNT, IGRSURF,
+     &   CAND_SEC_SEG_ID, CAND_MST_SEG_ID, MAX_STS_SIZE_ACTUAL)
+
+        WRITE(*,*) "---------------------------------------------------"
+        WRITE(*,*) "STS: Found ", COUNT, " potentional contact element pairs"
+        WRITE(*,*)
+
+        !-------------------------------------------------------------------------------
+        ! Friction model : computation of friction coefficients based on Material of connected Parts
+        !-------------------------------------------------------------------------------
+        IF(ITASK==1) CALL STARTIME(TIMERS,MACRO_TIMER_FRIC)
+
+        IF (COUNT > 0) THEN
+          NFORTH = 0
+          NFISOT = 0
+          ! Map STS contact pairs to friction arrays
+          ! For now, use simplified approach: map each contact pair
+          ! TODO: Properly map part IDs from CAND_SEC_SEG_ID and CAND_MST_SEG_ID
+          DO I = 1, MIN(COUNT, MVSIZ)
+            ! Initialize friction arrays for this contact pair
+            ! This is a placeholder - proper part ID mapping needed
+            IPARTFRICSI(I) = 0
+            IPARTFRICMI(I) = 0
+          ENDDO
+          
+          ! Call friction model (isotropic)
+          ! It will use default values from FRIC and INTBUF_TAB%FRIC_P
+
+          IF (IORTHFRIC == 0) THEN
+            CALL FRICTIONPARTS_MODEL_ISOT(
+     1           INTFRIC        ,MIN(COUNT,MVSIZ),IPARTFRICSI  ,IPARTFRICMI  ,ADPARTS_FRIC   ,
+     2           NSETPRTS       ,TABCOUPLEPARTS_FRIC,NPARTFRIC,TABPARTS_FRIC,TABCOEF_FRIC ,
+     3           FRIC           ,VISCF        ,INTBUF_TAB%FRIC_P,FRIC_COEFS   , FRICC     ,
+     4           VISCFFRIC      ,NTY          ,MFROT            ,IORTHFRIC    , IFRIC     ,
+     5           JLT_TIED       , TINT        ,TEMPI            ,NPC          ,TF         ,
+     6           TEMP           , H1          ,H2               ,H3           ,H4         ,
+     7           IX1            , IX2         ,IX3              ,IX4          ,IFORM      )
+
+          ENDIF
+        ENDIF
+
+        IF(ITASK==1) CALL STOPTIME(TIMERS,MACRO_TIMER_FRIC)
+
+        ! -----------------------
+        ! Try GAUSS SEARCH ALGORITHM
+        ! -----------------------
+        WRITE(*,*) "***********************************"
+        WRITE(*,*) "STS - GAUSS SEARCH ALGORITHM STARTED"
+        WRITE(*,*) "***********************************"
+
+        OPTION = 0 !FOR GAUSS STS ALGORITHM
+        QFRICT = 0.d0 !Friction energy
+        ALPHA0 = XFILTR_FRIC !Parameter for friction force calculation
+               
+        CALL PROCESS_STS_CONTACTS(CONT_ELEMENT, COUNT, OPTION,
+     &   CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
+     &   load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
+     &   FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
+     &   V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
+     &   INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST,
+     &   GP_XI1_GLOBAL, GP_XI2_GLOBAL,
+     &   GP_XI1_GLOBAL_PREV, GP_XI2_GLOBAL_PREV,
+     &   GP_XI1_PERIOD, GP_XI2_PERIOD,
+     &   GP_INITIALIZED,
+     &   GP_TTRIAL1_HIST, GP_TTRIAL2_HIST,
+     &   GP_IS_STICKING)
+        !IMPACT_glob indicates if any contact was found
+
+        ! If no contact found with GAUSS algorithm, try LOBATTO algorithm
+        IF (IMPACT_glob == 0) THEN
+            WRITE(*,*) "NO IMPACT FOUND WITH GAUSS SEARCH ALGORITHM"
+
+            ! -----------------------
+            ! Try LOBATTO SEARCH ALGORITHM
+            ! -----------------------
+            WRITE(*,*) "***********************************"
+            WRITE(*,*) "STS - LOBATTO SEARCH ALGORITHM STARTED"
+            WRITE(*,*) "***********************************"
+
+            OPTION = 1 !FOR LOBATTO STS ALGORITHM
+            QFRICT = 0.d0
+            ALPHA0 = XFILTR_FRIC
+            CALL PROCESS_STS_CONTACTS(CONT_ELEMENT, COUNT, OPTION,
+     &      CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
+     &      load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
+     &      FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
+     &      V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
+     &      INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST,
+     &      GP_XI1_GLOBAL, GP_XI2_GLOBAL,
+     &      GP_XI1_GLOBAL_PREV, GP_XI2_GLOBAL_PREV,
+     &      GP_XI1_PERIOD, GP_XI2_PERIOD,
+     &      GP_INITIALIZED,
+     &      GP_TTRIAL1_HIST, GP_TTRIAL2_HIST,
+     &      GP_IS_STICKING)
+          
+            IF (IMPACT_glob == 0) THEN
+                WRITE(*,*) "NO IMPACT FOUND WITH LOBATTO SEARCH ALGORITHM"
+            ENDIF  
+        ENDIF
+
+        ! Assemble forces if contact was found with either algorithm  
+        IF (IMPACT_glob /= 0) THEN
+          CALL I7ASS33(
+     1  JLT       ,A         ,NOINT     ,ITAB      ,STIFN     ,
+     2  STIF      ,FSKYI      ,ISKY      ,FCONT     ,IX1       ,
+     3  IX2       ,IX3       ,IX4       ,NSVG      ,NELTST    ,
+     4  ITYPTST   ,DT2T      ,NISKYFI   ,ISECIN    ,NSTRF     ,
+     5  SECFCUM   ,VISCN     ,NIN       ,FXI       ,FYI       , 
+     6  FZI       ,FX1       ,FY1       ,FZ1       ,FX2       ,
+     7  FY2       ,FZ2       ,FX3       ,FY3       ,FZ3       ,
+     8  FX4       ,FY4       ,FZ4       ,H1        ,H2        ,
+     9  H3        ,H4        ,KS        ,KT        ,K1        ,
+     A  K2        ,K3        ,K4        ,CS        ,CF        ,
+     B  C1        ,C2        ,C3        ,C4        ,C         ,
+     C  INTTH     ,PHI       ,PHI1      ,PHI2      ,PHI3      ,
+     D  PHI4      ,FTHE      ,FTHESKYI  ,MSKYI_SMS ,ISKYI_SMS ,
+     E  NSMS      ,DTMINI    ,JTASK     ,
+     F  CONDN     ,CONDINT   ,CONDNSKYI ,IXIG3D    ,KXIG3D    ,
+     J  WIGE      ,KNOT      ,IGEO      ,INTBUF_TAB%NIGE      ,
+     K  INTBUF_TAB%RIGE      ,X         ,H3D_DATA  ,KNOTLOCPC ,
+     L  KNOTLOCEL ,IFORM     ,NODADT_THERM, ASS_FLAG , load_arr, node_id_load, L, MAX_STS_SIZE_ACTUAL ) 
+        ENDIF
+        
+        ENDIF ! STS_ACTIVE = .TRUE.
+        ENDIF ! TYPE18
 C-----------------------------------------------
 C
           IF (IMONM > 0 .AND. JTASK == 1) CALL STOPTIME(TIMERS,20)

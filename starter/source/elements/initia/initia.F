@@ -244,6 +244,8 @@ C-----------------------------------------------
       use init_rwall_penalty_mod , only : init_rwall_penalty
       use ush_init_mod , only : ush_init
       use ini_guided_cable_mod, ONLY : ini_guided_cable 
+      USE Q1NP_RESTART_MOD
+      USE Q1NP_VOLUME_MOD
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -1021,6 +1023,67 @@ C Type element
         !----------------------------------------!
         IF (ITY == 1) THEN
          GBUF => ELBUF_TAB(NG)%GBUF
+C        Calculate volume for replaced HEX8 elements by integration
+         IF (NUMELQ1NP_G > 0) THEN
+           DO I=1,NUMELQ1NP_G
+             IEL_HEX8 = KQ1NP_TAB(10, I)
+             IF (IEL_HEX8 > 0 .AND. IEL_HEX8 <= NUMELS) THEN
+
+C              Check if this element is in the current group
+C              NFT is 0-based offset, so element indices are NFT+1 to NFT+NEL
+               IF (IEL_HEX8 >= NFT+1 .AND. IEL_HEX8 <= NFT + NEL) THEN
+                 IEL_LOCAL = IEL_HEX8 - NFT
+                 IF (IEL_LOCAL > 0 .AND. IEL_LOCAL <= NEL) THEN
+                   IF (ASSOCIATED(GBUF%OFF)) THEN
+                     GBUF%OFF(IEL_LOCAL) = ZERO
+                   ENDIF
+
+C                  Compute Q1NP element volume using enriched shape functions
+                   IF (ASSOCIATED(GBUF%VOL)) THEN
+                     IF (ASSOCIATED(Q1NP_KTAB_G) .AND. 
+     .                   Q1NP_NX_G > 0 .AND. Q1NP_NY_G > 0) THEN
+
+
+C                      I → IEL_Q1NP is the Q1NP element index
+C                      IEL_HEX8 → IEL_LOCAL is the original HEX8 element index
+C                      GBUF%VOL(IEL_LOCAL) is the volume of the original HEX8 element (modified here)
+C                      KQ1NP_TAB is the Q1NP element table
+C                         KQ1NP_TAB(1,*) = Material‑ID
+C                         KQ1NP_TAB(2,*) = Property‑ID
+C                         KQ1NP_TAB(3,*) = Anzahl Control Points NCTRL
+C                         KQ1NP_TAB(4,*) = Offset auf IQ1NP_TAB für die Konnektivität
+C                         KQ1NP_TAB(5,*) = Element‑ID (global)
+C                         KQ1NP_TAB(6,*) = ELEM_U (Index in u‑Richtung, 0‑basiert)
+C                         KQ1NP_TAB(7,*) = ELEM_V (Index in v‑Richtung, 0‑basiert)
+C                         KQ1NP_TAB(8,*) = NURBS‑Grad p
+C                         KQ1NP_TAB(9,*) = NURBS‑Grad q
+C                         KQ1NP_TAB(10,*) = IEL_HEX8 – zugehöriger ursprünglicher HEX8‑Index
+C                         KQ1NP_TAB(14,*) = Offset auf IQ1NP_BULK_TAB (Bottom‑Nodes).
+C                      IQ1NP_TAB is the Q1NP element control points connectivity table
+C                      IQ1NP_BULK_TAB is the Q1NP element bulk points table
+C                      Q1NP_KTAB_G is the global Q1NP element knot vectors
+C                         Q1NP_KTAB(1:NKNOT_U) = U-Knots
+C                         Q1NP_KTAB(NKNOT_U+1:NKNOT_U+NKNOT_V) = V-Knots
+C                      X is the node coordinates
+C                      Q1NP_NX_G is the number of knot vector points in the x direction
+C                      Q1NP_NY_G is the number of knot vector points in the y direction
+
+                       CALL Q1NP_COMPUTE_VOLUME_ELEMENT(I,
+     .                    KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
+     .                    Q1NP_KTAB_G, X, Q1NP_NX_G, Q1NP_NY_G,
+     .                    GBUF%VOL(IEL_LOCAL))
+                     ELSE
+                       GBUF%VOL(IEL_LOCAL) = ONE  ! Fallback if knot vectors not available
+                     ENDIF
+                     
+! TODO: CHECK IF THIS IS VALID
+
+                   ENDIF
+                 ENDIF
+               ENDIF
+             ENDIF
+           ENDDO
+         ENDIF
          IF (IUSOLYLD == 1 ) THEN
           CALL SCALEINI(
      .           ELBUF_TAB(NG), IXS      , SIGSP    ,SIGI  ,   NSIGI,

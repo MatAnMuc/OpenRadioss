@@ -182,9 +182,76 @@ C           looks for an elt sharing the face.
               END DO
               IF(NN==NF)THEN
                 DO KK=1,6
-            DO II=1,4
-              MS(II)=IXS(FACES(II,KK)+1,KS)
-            END DO
+C           Get face nodes - check if Q1NP again
+                  IS_Q1NP_ELEMENT = .FALSE.
+                  IEL_Q1NP = 0
+                  IF (HAS_Q1NP) THEN
+                    DO IEL_Q1NP = 1, NUMELQ1NP_G
+                      IF (KQ1NP_TAB(10, IEL_Q1NP) == KS) THEN
+                        IS_Q1NP_ELEMENT = .TRUE.
+                        EXIT
+                      ENDIF
+                    ENDDO
+                  ENDIF
+C
+                  IF (IS_Q1NP_ELEMENT) THEN
+                    OFFSET_BULK = KQ1NP_TAB(14, IEL_Q1NP)
+                    OFFSET_CTRL = KQ1NP_TAB(4, IEL_Q1NP)
+                    P = KQ1NP_TAB(8, IEL_Q1NP)
+                    Q = KQ1NP_TAB(9, IEL_Q1NP)
+                    IDX_CP = OFFSET_CTRL - 1
+                    IF (KK == 1) THEN
+                      MS(1) = IQ1NP_BULK_TAB(OFFSET_BULK)
+                      MS(2) = IQ1NP_BULK_TAB(OFFSET_BULK + 1)
+                      MS(3) = IQ1NP_BULK_TAB(OFFSET_BULK + 2)
+                      MS(4) = IQ1NP_BULK_TAB(OFFSET_BULK + 3)
+                      IF (JS <= 10 .OR. KS <= 10) THEN
+                        WRITE(*,'(A,I2,A,4I8)') 
+     .                    '  Q1NP Face ', KK, ' (bottom) nodes: ',
+     .                    (MS(II), II=1,4)
+                      ENDIF
+                    ELSE IF (KK == 2) THEN
+                      MS(1) = IQ1NP_TAB(IDX_CP + 1)
+                      MS(2) = IQ1NP_TAB(IDX_CP + (P+1))
+                      MS(3) = IQ1NP_TAB(IDX_CP + (P+1)*(Q+1))
+                      MS(4) = IQ1NP_TAB(IDX_CP + (P+1)*Q + 1)
+                      IF (JS <= 10 .OR. KS <= 10) THEN
+                        WRITE(*,'(A,I2,A,4I8)') 
+     .                    '  Q1NP Face ', KK, ' (top) nodes: ',
+     .                    (MS(II), II=1,4)
+                      ENDIF
+                    ELSE
+                      DO II=1,4
+                        I1 = FACES(II,KK)+1
+                        IF (I1 <= 4) THEN
+                          MS(II) = IQ1NP_BULK_TAB(OFFSET_BULK + I1 - 2)
+                        ELSE
+                          IF (I1 == 5) MS(II) = IQ1NP_TAB(IDX_CP + 1)
+                          IF (I1 == 6) MS(II) = IQ1NP_TAB(IDX_CP + (P+1))
+                          IF (I1 == 7) MS(II) = IQ1NP_TAB(IDX_CP + (P+1)*Q + 1)
+                          IF (I1 == 8) MS(II) = IQ1NP_TAB(IDX_CP + (P+1)*(Q+1))
+                        ENDIF
+                      ENDDO
+                      IF (JS <= 10 .OR. KS <= 10) THEN
+                        WRITE(*,'(A,I2,A,4I8)') 
+     .                    '  Q1NP Face ', KK, ' (side) nodes: ',
+     .                    (MS(II), II=1,4)
+                      ENDIF
+                    ENDIF
+                  ELSE IF (KS > NUMELS8 .AND. KS <= NUMELS8+NUMELS10) THEN
+                    DO II=1,4
+                      I1 = FACES(II,KK)+1
+                      IF (I1 == 2 .OR. I1 == 4 .OR. I1 == 6 .OR. I1 == 7) THEN
+                        MS(II) = IXS(I1,KS)
+                      ELSE
+                        MS(II) = 0
+                      ENDIF
+                    ENDDO
+                  ELSE
+                    DO II=1,4
+                      MS(II)=IXS(FACES(II,KK)+1,KS)
+                    END DO
+                  ENDIF
 C
 C                 keep only 1 occurrence of each node (triangles, degenerated cases...)
             DO K1=1,3
@@ -627,18 +694,123 @@ C           looks for an elt sharing the face.
               DO II=1,NF
                 NODTAG(NI(II))=0
               END DO
-              DO II=1,8
-                NODTAG(IXS(II+1,KS))=1
-              END DO
+C           Get nodes for element KS (handles 8-node, 10-node, and Q1NP elements)
+              IS_Q1NP_ELEMENT = .FALSE.
+              IEL_Q1NP = 0
+              IF (HAS_Q1NP) THEN
+                DO IEL_Q1NP = 1, NUMELQ1NP_G
+                  IF (KQ1NP_TAB(10, IEL_Q1NP) == KS) THEN
+                    IS_Q1NP_ELEMENT = .TRUE.
+                    EXIT
+                  ENDIF
+                ENDDO
+              ENDIF
+C
+              IF (IS_Q1NP_ELEMENT) THEN
+C             Q1NP element: get nodes from IQ1NP_BULK_TAB and IQ1NP_TAB
+                OFFSET_BULK = KQ1NP_TAB(14, IEL_Q1NP)
+                OFFSET_CTRL = KQ1NP_TAB(4, IEL_Q1NP)
+                P = KQ1NP_TAB(8, IEL_Q1NP)
+                Q = KQ1NP_TAB(9, IEL_Q1NP)
+                IDX_CP = OFFSET_CTRL - 1
+                IF (OFFSET_BULK < 1 .OR. OFFSET_BULK+3 > SQ1NPBULK_G) THEN
+                  CYCLE
+                ENDIF
+                DO II=1,4
+                  Q1NP_NODES(II) = IQ1NP_BULK_TAB(OFFSET_BULK + II - 1)
+                ENDDO
+                Q1NP_NODES(5) = IQ1NP_TAB(IDX_CP + 1)
+                Q1NP_NODES(6) = IQ1NP_TAB(IDX_CP + (P+1))
+                Q1NP_NODES(7) = IQ1NP_TAB(IDX_CP + (P+1)*Q + 1)
+                Q1NP_NODES(8) = IQ1NP_TAB(IDX_CP + (P+1)*(Q+1))
+                DO II=1,8
+                  IF (Q1NP_NODES(II) > 0 .AND. Q1NP_NODES(II) <= NUMNOD) THEN
+                    NODTAG(Q1NP_NODES(II)) = 1
+                  ENDIF
+                ENDDO
+              ELSE IF (KS > NUMELS8 .AND. KS <= NUMELS8+NUMELS10) THEN
+C             10-node element: only 4 corner nodes are valid
+                NODTAG(IXS(2,KS)) = 1
+                NODTAG(IXS(4,KS)) = 1
+                NODTAG(IXS(6,KS)) = 1
+                NODTAG(IXS(7,KS)) = 1
+              ELSE
+C             8-node element: all 8 nodes are valid
+                DO II=1,8
+                  NODTAG(IXS(II+1,KS))=1
+                END DO
+              ENDIF
               NN=0
               DO II=1,NF
                 NN=NN+NODTAG(NI(II))
               END DO
               IF(NN==NF)THEN
                 DO KK=1,6
-            DO II=1,4
-              MS(II)=IXS(FACES(II,KK)+1,KS)
-            END DO
+C           Get face nodes - check if Q1NP again
+                  IS_Q1NP_ELEMENT = .FALSE.
+                  IEL_Q1NP = 0
+                  IF (HAS_Q1NP) THEN
+                    DO IEL_Q1NP = 1, NUMELQ1NP_G
+                      IF (KQ1NP_TAB(10, IEL_Q1NP) == KS) THEN
+                        IS_Q1NP_ELEMENT = .TRUE.
+                        EXIT
+                      ENDIF
+                    ENDDO
+                  ENDIF
+C
+                  IF (IS_Q1NP_ELEMENT) THEN
+                    OFFSET_BULK = KQ1NP_TAB(14, IEL_Q1NP)
+                    OFFSET_CTRL = KQ1NP_TAB(4, IEL_Q1NP)
+                    P = KQ1NP_TAB(8, IEL_Q1NP)
+                    Q = KQ1NP_TAB(9, IEL_Q1NP)
+                    IDX_CP = OFFSET_CTRL - 1
+                    IF (KK == 1) THEN
+                      MS(1) = IQ1NP_BULK_TAB(OFFSET_BULK)
+                      MS(2) = IQ1NP_BULK_TAB(OFFSET_BULK + 1)
+                      MS(3) = IQ1NP_BULK_TAB(OFFSET_BULK + 2)
+                      MS(4) = IQ1NP_BULK_TAB(OFFSET_BULK + 3)
+                    ELSE IF (KK == 2) THEN
+                      MS(1) = IQ1NP_TAB(IDX_CP + 1)
+                      MS(2) = IQ1NP_TAB(IDX_CP + (P+1))
+                      MS(3) = IQ1NP_TAB(IDX_CP + (P+1)*(Q+1))
+                      MS(4) = IQ1NP_TAB(IDX_CP + (P+1)*Q + 1)
+                    ELSE
+                      DO II=1,4
+                        I1 = FACES(II,KK)+1
+                        IF (I1 <= 4) THEN
+                          MS(II) = IQ1NP_BULK_TAB(OFFSET_BULK + I1 - 2)
+                        ELSE
+                          IF (I1 == 5) MS(II) = IQ1NP_TAB(IDX_CP + 1)
+                          IF (I1 == 6) MS(II) = IQ1NP_TAB(IDX_CP + (P+1))
+                          IF (I1 == 7) MS(II) = IQ1NP_TAB(IDX_CP + (P+1)*Q + 1)
+                          IF (I1 == 8) MS(II) = IQ1NP_TAB(IDX_CP + (P+1)*(Q+1))
+                        ENDIF
+                      ENDDO
+                    ENDIF
+                  ELSE IF (KS > NUMELS8 .AND. KS <= NUMELS8+NUMELS10) THEN
+                    DO II=1,4
+                      I1 = FACES(II,KK)+1
+                      IF (I1 == 2 .OR. I1 == 4 .OR. I1 == 6 .OR. I1 == 7) THEN
+                        MS(II) = IXS(I1,KS)
+                      ELSE
+                        MS(II) = 0
+                      ENDIF
+                    ENDDO
+                    IF (JS <= 10 .OR. KS <= 10) THEN
+                      WRITE(*,'(A,I2,A,4I8)') 
+     .                  '  SURFEXT_TAGN 10-node Face ', KK, ' nodes: ',
+     .                  (MS(II), II=1,4)
+                    ENDIF
+                  ELSE
+                    DO II=1,4
+                      MS(II)=IXS(FACES(II,KK)+1,KS)
+                    END DO
+                    IF (JS <= 10 .OR. KS <= 10 .AND. KK <= 2) THEN
+                      WRITE(*,'(A,I2,A,4I8)') 
+     .                  '  SURFEXT_TAGN 8-node Face ', KK, ' nodes: ',
+     .                  (MS(II), II=1,4)
+                    ENDIF
+                  ENDIF
 C
 C                 keep only 1 occurrence of each node (triangles, degenerated cases...)
             DO K1=1,3
