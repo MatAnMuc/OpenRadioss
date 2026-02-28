@@ -47,7 +47,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      6       IPM           ,NOD2ELS ,ISOLOFF     , ISOLNOD1,
      7       TAGPRT_SMS    ,INIVOL  ,SPH2SOL     , SOL2SPH , SOL2SPH_TYP,
      8       IFLAG_BPRELOAD,CLUSTERS,MATPARAM_TAB, RNOISE  ,
-     9       PRINT_FLAG    ,DAMP_RANGE_PART,IPRELOAD_FUN)
+     9       PRINT_FLAG    ,DAMP_RANGE_PART,IPRELOAD_FUN, KQ1NP_TAB)
 C-----------------------------------------------
 C   A n a l y s e   M o d u l e
 C-----------------------------------------------
