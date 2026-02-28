@@ -864,6 +864,9 @@ C
 C
       INTEGER(KIND=8) :: KVOISPH8,NUMSPH8,SIXSP8,LIMIT8
       INTEGER :: INTEGER_LIMIT32
+      INTEGER NKQ1NP,NBULKQ1NP
+      PARAMETER (NKQ1NP=15)
+      PARAMETER (NBULKQ1NP=4)
 
       INTEGER, DIMENSION(:),ALLOCATABLE :: CEP,CEL,CNE,
      .                                     CNI2, CELI2, CEPI2,
@@ -973,6 +976,14 @@ C
       TYPE (MAT_ELEM_) ,INTENT(INOUT) :: MAT_ELEM
       INTEGER LWAMP_L     !< Size of work array in Engine (WA)
       INTEGER LWANMP_L    !< Size of work array in Engine (WA)
+
+C NEW VARIABLES FOR NURBS
+      my_real, allocatable :: NODE_MAT(:,:)
+      my_real, allocatable :: SOLID_ELEMENT_MAT(:,:)
+      my_real, allocatable :: SHELL_ELEMENT_MAT(:,:)
+      my_real, allocatable :: PRIMARY_SEG_MAT(:,:)
+      my_real, allocatable :: SECONDARY_SEG_MAT(:,:)
+      INTEGER :: nr_nodes, nr_elements, MAX_USER_ID
 C-----------------------------------------------
       CHARACTER(LEN=4096) :: SCR_FILE_NAME
       CHARACTER(LEN=ncharline) :: RLINE
@@ -2807,6 +2818,19 @@ c
         ALLOCATE(KNOTLOCEL(0) ,STAT=stat)
         ALLOCATE(KNOTLOCPC(0) ,STAT=stat)
       ENDIF
+C--------------------------------------------
+C     Q1NP ELEMENT ALLOCATION (will be generated after surfaces are read)
+C--------------------------------------------
+      CALL RESET_Q1NP_COUNTS()
+      MAXQ1NPCTRL   = 0
+      SQ1NPBEZ_L    = 0
+C     Allocate empty arrays for now, will be reallocated after surface reading
+      ALLOCATE(KQ1NP_TAB(0,0) ,STAT=stat)
+      ALLOCATE(IQ1NP_TAB(0)   ,STAT=stat)
+      ALLOCATE(IQ1NP_BULK_TAB(0) ,STAT=stat)
+      ALLOCATE(Q1NP_WTAB(0)   ,STAT=stat)
+      ALLOCATE(Q1NP_KTAB(0)   ,STAT=stat)
+      ALLOCATE(Q1NP_CPTAB(3,0) ,STAT=stat)
 C--------------------------------------------
 C     PRE-READING GRNOD/NODENS
 C--------------------------------------------

@@ -37,3 +37,4 @@ extlib.zip
 *.c.json
 .devcontainer/**
 .cursor/**
+.stfolder/**

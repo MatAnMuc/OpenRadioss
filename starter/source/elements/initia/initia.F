@@ -198,7 +198,8 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      N                  PRELOAD_A  ,FAIL_FRACTAL  ,FAIL_BROKMANN    ,DEFAULTS       ,NDAMP_FREQ_RANGE,
      O                  DAMPR      ,IBEAM_VECTOR  ,RBEAM_VECTOR     ,IKINE          ,LSIGI     ,
      P                  LSIGSP     ,SRNOISE       ,NPRW             ,LPRW           , RWSTIF_PEN,
-     M                  SLN_PEN    ,ROOTLEN       ,ROOTNAM          ,NGUIDED_CABLE  ,TOTMAS1  )
+     M                  SLN_PEN    ,ROOTLEN       ,ROOTNAM          ,NGUIDED_CABLE  ,TOTMAS1   ,
+     N                  STIF_STS   ,KQ1NP_TAB     ,IQ1NP_TAB        ,IQ1NP_BULK_TAB)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------                     
@@ -304,6 +305,7 @@ C-----------------------------------------------
      .   IUSOLYLD,IUSER,IDDLEVEL,NBSUBMAT, TAGPRT_SMS(*),SITAGE,FXB_MATRIX_ADD(4,*),
      .   FXB_LAST_ADRESS(*),PTR_NOPT_FXB,R_SKEW(*), NPTS,KNOD2EL1D(*)  ,NOD2EL1D(*),
      .   KNOD2ELC(*),NOD2ELC(*)
+      INTEGER,INTENT(INOUT) :: KQ1NP_TAB(15,*),IQ1NP_TAB(*),IQ1NP_BULK_TAB(*)
       TYPE(T_EBCS_TAB), INTENT(INOUT) :: EBCS_TAB     
       INTEGER,TARGET  :: ITAGE(*)
       INTEGER,POINTER :: ptr_ITAGE
@@ -364,6 +366,7 @@ C
       INTEGER,INTENT(IN) :: ROOTLEN
       CHARACTER (LEN=ROOTLEN), INTENT(IN) :: ROOTNAM
       INTEGER,INTENT(IN) :: NGUIDED_CABLE
+      my_real, INTENT(INOUT) :: STIF_STS
 C
       TYPE (ELBUF_STRUCT_), TARGET, DIMENSION(NGROUP) :: ELBUF_TAB
       TYPE (ELBUF_STRUCT_), TARGET, DIMENSION(NGROUP,NXEL) :: XFEM_TAB
@@ -415,8 +418,8 @@ C      INTEGER *8 I8MI(6,NUMNOD)
      .   IADUIN,IADUSM,IADUSR,IADUMV,IADURV, NUVAR,ICNOD, RBYID,
      .   ADRRPM,ALM,ASIG,NELS,NELC,NELTG,AMOD,NBNO,NME,NML,ARPM,LVSIG,
      .   IFILE,IRCS,NELT,NELP,FXBID, ANOD, IRCM, NSNI, NSN, NMANI, IMIN, IMAX,
-     .   NELEMR,CPT_ELTENS,IXFEM,ITG,ISUBSTACK,NCTRL, ITETRA10, KK,PX,PY,PZ,IPID
-
+     .   NELEMR,CPT_ELTENS,IXFEM,ITG,ISUBSTACK,NCTRL, ITETRA10, KK,PX,PY,PZ,IPID,
+     .   IEL,IEL_HEX8,IEL_LOCAL
       INTEGER SOLMAT(0:MAXLAW), COQMAT(0:MAXLAW), TRUMAT(0:MAXLAW),
      .   POUMAT(0:MAXLAW),SPHMAT(0:MAXLAW),
      .   RESMAT(0:MAXLAW),RESPID(0:50), SPHPID(0:50),
@@ -427,7 +430,8 @@ C      INTEGER *8 I8MI(6,NUMNOD)
       my_real DT2S, B1, B2, B3, B6, B5, B9, XG, YG, ZG, XX, YY, ZZ, XY, XZ, YZ,DTNODA,FILL_RATIO
       my_real, DIMENSION(:), ALLOCATABLE ::
      .    MBUFEL_TMP, MDEPL_TMP,PARTSAV,MCPS,MCPSX,
-     .    MS_LAYERC,ZI_LAYERC, MSZ2C,ZPLY,PARTSAV1_PON,MCPP
+     .    MS_LAYERC,ZI_LAYERC, MSZ2C,ZPLY,PARTSAV1_PON,MCPP,
+     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: IRIG_NODE, CONNEC
       my_real, DIMENSION(:), ALLOCATABLE :: PART_AREA,ELE_AREA
@@ -442,6 +446,8 @@ C      INTEGER *8 I8MI(6,NUMNOD)
       INTEGER,INTENT(IN) :: KNOD2ELTG(NUMNOD+1)
       INTEGER,INTENT(IN) :: KNOD2ELQ(NUMNOD+1)
       INTEGER,INTENT(IN) :: KNOD2ELS(NUMNOD+1)
+      ! ----------------
+      my_real STIF_STS_CUR
 C-----------------------------------------------
 C   D e r i v e d   T y p e   D e f i n i t i o n s
 C-----------------------------------------------

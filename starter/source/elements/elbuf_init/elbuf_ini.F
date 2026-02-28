@@ -41,7 +41,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      .           IPARTSP   ,IXS      ,IXQ      ,IXC      ,IXTG      ,
      .           FLAG_XFEM ,IPARTIG3D,STACK    ,IGEO_STACK,
      .           IXT       ,IXP      ,IXR      ,KXX      ,GEO       ,
-     .           EOS_TAG   ,ISTR_24  ,PRINT_FLAG,DEFAULTS)
+     .           EOS_TAG   ,ISTR_24  ,PRINT_FLAG,DEFAULTS,KQ1NP_TAB)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
