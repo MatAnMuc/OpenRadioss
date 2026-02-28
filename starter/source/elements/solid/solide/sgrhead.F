@@ -566,6 +566,14 @@ C--------------------------------------------------------------
         ENDIF
       ENDDO
       EADD(ND+1) = NUMELS+1
+      IF (IDEBUG_Q1NP_SORT > 0) THEN
+        WRITE(*,'(A,I4)') 'Number of super-groups (ND) = ', ND
+        DO I = 1, ND
+          WRITE(*,'(A,I4,A,I4,A,I4)') 
+     .      'Super-group ', I, ': elements (EADD(I)) = ', EADD(I), 
+     .      ' to ', EADD(I+1)-1
+        ENDDO
+      ENDIF
       DEALLOCATE(INDEX2)
 c
       IF (NPERTURB > 0) THEN

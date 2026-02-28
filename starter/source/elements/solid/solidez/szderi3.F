@@ -134,14 +134,14 @@ C
 
 C
       DO I=1,NEL
-       VOLDP(I)=ONE_OVER_64*(JAC1(I)*JAC_59_68(I)+JAC2(I)*JAC_67_49(I)+JAC3(I)*JAC_48_57(I))
-       DET(I)=VOLDP(I)
-       VOL(I)=DET(I)
+         VOLDP(I)=ONE_OVER_64*(JAC1(I)*JAC_59_68(I)+JAC2(I)*JAC_67_49(I)+JAC3(I)*JAC_48_57(I))
+         DET(I)=VOLDP(I)
+         VOL(I)=DET(I)
       ENDDO
 C
       DO I=1,NEL
         IF(DET(I) <=ZERO) THEN
-          CALL ANCMSG(MSGID=245,
+        CALL ANCMSG(MSGID=245,
      .                MSGTYPE=MSGERROR,
      .                ANMODE=ANINFO,
      .                I1=NGL(I))

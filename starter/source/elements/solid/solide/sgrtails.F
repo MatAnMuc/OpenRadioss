@@ -1556,6 +1556,14 @@ C
          NGP(P)=NGROUP-NGP(P)
         ENDIF
        ENDDO
+C
+C Debug: Summary for super-group
+C
+       IF (IDEBUG_Q1NP_GROUP > 0) THEN
+         WRITE(*,'(A,I4,A,I4,A)') 
+     .     'Super-group ', N, ' summary: ', 
+     .     NGROUP-NGR1+1, ' group(s) processed'
+       ENDIF
 C Dd_iad => nb groups per sub domain
        NGP(NSPMD+1)=0
        DO P = 1, NSPMD
