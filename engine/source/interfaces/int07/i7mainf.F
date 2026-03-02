@@ -163,20 +163,6 @@ C-----------------------------------------------
 C-----------------------------------------------
 C     N E W   V a r i a b l e s
 C-----------------------------------------------
-      INTEGER, PARAMETER :: MAX_STS_SIZE = 1
-      my_real CONT_ELEMENT(MAX_STS_SIZE,3,8) !contact element array
-      my_real load_arr(MAX_STS_SIZE,8,4) !load array
-      INTEGER CAND_SEC_SEG_ID(MAX_STS_SIZE,5) !secondary segment nodes
-      INTEGER CAND_MST_SEG_ID(MAX_STS_SIZE,5) !primary segment nodes
-      INTEGER CAND_SEC_SEG(MAX_STS_SIZE) !secondary segment nodes
-      INTEGER node_id_load(MAX_STS_SIZE*8) !node id array (8 nodes per element)
-      INTEGER COUNT !count for the number of contact elements found
-      INTEGER ASS_FLAG !Assembly flag, 0 if old Assembly, 1 if new assembly algorithm called
-      INTEGER :: MAX_STS_SIZE_ACTUAL !actual calculated sts array size needed      
-      INTEGER OPTION !option for the contact algorithm
-      INTEGER IMPACT_glob !global impact flag, 0 if no impact, 1 if impact
-      LOGICAL :: STS_ACTIVE !true if STS is active, false if NTS is active
-C-----------------------------------------------
       my_real, DIMENSION(:,:,:), ALLOCATABLE :: CONT_ELEMENT  !contact element array
       my_real, DIMENSION(:,:,:), ALLOCATABLE :: load_arr     !load array
       INTEGER, DIMENSION(:,:),     ALLOCATABLE :: CAND_SEC_SEG_ID   !secondary segment nodes
@@ -298,7 +284,7 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
-      STS_ACTIVE = .TRUE. ! Set to FALSE to use old NTS algorithm
+      STS_ACTIVE = .FALSE. ! Set to FALSE to use old NTS algorithm
       IF (STS_ACTIVE) THEN
         ASS_FLAG = 2  ! New STS assembly algorithm
       ELSE
