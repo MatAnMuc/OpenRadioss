@@ -115,11 +115,6 @@ C     Q1NP helper variables
 !     NUM_ELM : number of element in the tagged part
       INTEGER :: NUM_PART,NUM_ELM
       INTEGER :: ID_PART,JS_PART, JS_ELM        !       index
-C     Q1NP helper variables
-      INTEGER IEL_Q1NP, IEL_HEX8, OFFSET_CTRL, OFFSET_BULK
-      INTEGER N_CTRL, P, Q, IDX_CP
-      INTEGER Q1NP_NODES(8)
-      LOGICAL IS_Q1NP_ELEMENT, HAS_Q1NP
       DATA FACES/4,3,2,1,
      .           5,6,7,8,
      .           1,2,6,5,
