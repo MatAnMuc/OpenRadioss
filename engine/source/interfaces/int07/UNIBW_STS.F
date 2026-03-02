@@ -123,7 +123,6 @@ C-----------------------------------------------
           J = J + 1
           ADJA(J, 1) = CAND_SEC_SEG(I)
           ADJA(J, 2) = CAND_MST_SEG(I)
-          END IF
         END IF
       END DO
       COUNT = K
