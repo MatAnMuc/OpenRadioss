@@ -241,6 +241,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    table_mod                        ../starter/share/modules1/table_mod.F
 !||    w_bcs_proc_mod                   ../starter/source/restart/ddsplit/w_bcs_proc.F90
 !||    w_inivel_str_mod                 ../starter/source/restart/ddsplit/w_inivel_str.F90
+!||    W_Q1NP_MOD                       ../starter/source/restart/ddsplit/w_q1np.F90
 !||====================================================================
       SUBROUTINE DDSPLIT(
      1   P            ,CEP          ,CEL            ,IGEO         ,MAT_ELEM    ,
@@ -393,6 +394,7 @@ C-----------------------------------------------
       use constraint_mod , only : constraint_
       use c_inivell_mod ,  only : c_inivell
       use w_inivel_str_mod , only : w_inivel_str
+      use W_Q1NP_MOD
       use glob_therm_mod
       use write_ale_grid_mod, only : write_ale_grid
       use PBLAST_MOD
