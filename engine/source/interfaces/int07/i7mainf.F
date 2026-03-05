@@ -102,6 +102,7 @@ C-----------------------------------------------
       USE OUTPUT_MOD
       USE I18DST3_MOD , ONLY : I18DST3
       USE I18FOR3_MOD , ONLY : I18FOR3
+      USE sts_gp_state_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -176,6 +177,7 @@ C-----------------------------------------------
       INTEGER IMPACT_glob !global impact flag, 0 if no impact, 1 if impact
       LOGICAL :: STS_ACTIVE !true if STS is active, false if NTS is active
       INTEGER :: IP_MAX
+      INTEGER :: MAX_GLOBAL_GP_LOC
 C-----------------------------------------------
 C   H i s t o r y   V a r i a b l e s   f o r   F r i c t i o n
 C-----------------------------------------------
@@ -196,21 +198,6 @@ C-----------------------------------------------
       INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_SECONDARY_EL_ID
       INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_MASTER_EL_ID
       INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_MASTER_EL_ID_PREV
-
-      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI1_GLOBAL
-      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI2_GLOBAL
-      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI1_GLOBAL_PREV
-      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI2_GLOBAL_PREV
-
-      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI1_PERIOD
-      INTEGER, DIMENSION(:), ALLOCATABLE, SAVE :: GP_XI2_PERIOD
-
-      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_TTRIAL1_HIST
-      REAL*8 , DIMENSION(:), ALLOCATABLE, SAVE :: GP_TTRIAL2_HIST
-
-      LOGICAL, DIMENSION(:), ALLOCATABLE, SAVE :: GP_IS_STICKING
-      LOGICAL, DIMENSION(:), ALLOCATABLE, SAVE :: GP_INITIALIZED
-      INTEGER :: MAX_GLOBAL_GP
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
@@ -284,7 +271,7 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
-      STS_ACTIVE = .FALSE. ! Set to FALSE to use old NTS algorithm
+      STS_ACTIVE = .TRUE. ! Set to FALSE to use old NTS algorithm
       IF (STS_ACTIVE) THEN
         ASS_FLAG = 2  ! New STS assembly algorithm
       ELSE
@@ -713,9 +700,8 @@ C-----------------------------------------------
       IP_MAX = 2  ! Current quadrature order
       
       ! Maximum number of Gauss points for STS pairs (all secondary elements)
-      ! MAX_GLOBAL_GP = MAX_STS_SIZE_ACTUAL * IP_MAX * IP_MAX
       ! Used for 1D global Gauss point state arrays
-      MAX_GLOBAL_GP = MAX_STS_SIZE_ACTUAL * IP_MAX * IP_MAX
+      MAX_GLOBAL_GP_LOC = MAX_STS_SIZE_ACTUAL * IP_MAX * IP_MAX
       
       ! Check if reallocation is needed for element-based history arrays
       IF (.NOT. ALLOCATED(XI1_HIST) .OR. 
@@ -747,7 +733,9 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   Allocate/Reallocate Global Gauss Point State Arrays
 C-----------------------------------------------
-      IF (.NOT. ALLOCATED(GP_XI1_GLOBAL) .OR.
+      CALL sts_gp_state_init(MAX_STS_SIZE_ACTUAL, IP_MAX)
+
+      IF (.NOT. ALLOCATED(GP_GLOBAL_ID) .OR.
      &    MAX_STS_SIZE_ACTUAL > MAX_STS_SIZE_HIST .OR.
      &    IP_MAX /= IP_MAX_HIST) THEN
 
@@ -757,59 +745,17 @@ C-----------------------------------------------
         IF (ALLOCATED(GP_MASTER_EL_ID))     DEALLOCATE(GP_MASTER_EL_ID)
         IF (ALLOCATED(GP_MASTER_EL_ID_PREV)) DEALLOCATE(GP_MASTER_EL_ID_PREV)
 
-        IF (ALLOCATED(GP_XI1_GLOBAL))       DEALLOCATE(GP_XI1_GLOBAL)
-        IF (ALLOCATED(GP_XI2_GLOBAL))       DEALLOCATE(GP_XI2_GLOBAL)
-        IF (ALLOCATED(GP_XI1_GLOBAL_PREV))  DEALLOCATE(GP_XI1_GLOBAL_PREV)
-        IF (ALLOCATED(GP_XI2_GLOBAL_PREV))  DEALLOCATE(GP_XI2_GLOBAL_PREV)
+        ! Allocate auxiliary global Gauss point identification arrays
+        ALLOCATE(GP_GLOBAL_ID       (MAX_GLOBAL_GP_LOC))
+        ALLOCATE(GP_SECONDARY_EL_ID (MAX_GLOBAL_GP_LOC))
+        ALLOCATE(GP_MASTER_EL_ID    (MAX_GLOBAL_GP_LOC))
+        ALLOCATE(GP_MASTER_EL_ID_PREV(MAX_GLOBAL_GP_LOC))
 
-        IF (ALLOCATED(GP_XI1_PERIOD))       DEALLOCATE(GP_XI1_PERIOD)
-        IF (ALLOCATED(GP_XI2_PERIOD))       DEALLOCATE(GP_XI2_PERIOD)
-
-        IF (ALLOCATED(GP_TTRIAL1_HIST))     DEALLOCATE(GP_TTRIAL1_HIST)
-        IF (ALLOCATED(GP_TTRIAL2_HIST))     DEALLOCATE(GP_TTRIAL2_HIST)
-
-        IF (ALLOCATED(GP_IS_STICKING))      DEALLOCATE(GP_IS_STICKING)
-        IF (ALLOCATED(GP_INITIALIZED))      DEALLOCATE(GP_INITIALIZED)
-
-        ! Allocate global Gauss point state arrays
-        ALLOCATE(GP_GLOBAL_ID       (MAX_GLOBAL_GP))
-        ALLOCATE(GP_SECONDARY_EL_ID (MAX_GLOBAL_GP))
-        ALLOCATE(GP_MASTER_EL_ID    (MAX_GLOBAL_GP))
-        ALLOCATE(GP_MASTER_EL_ID_PREV(MAX_GLOBAL_GP))
-
-        ALLOCATE(GP_XI1_GLOBAL      (MAX_GLOBAL_GP))
-        ALLOCATE(GP_XI2_GLOBAL      (MAX_GLOBAL_GP))
-        ALLOCATE(GP_XI1_GLOBAL_PREV (MAX_GLOBAL_GP))
-        ALLOCATE(GP_XI2_GLOBAL_PREV (MAX_GLOBAL_GP))
-
-        ALLOCATE(GP_XI1_PERIOD      (MAX_GLOBAL_GP))
-        ALLOCATE(GP_XI2_PERIOD      (MAX_GLOBAL_GP))
-
-        ALLOCATE(GP_TTRIAL1_HIST    (MAX_GLOBAL_GP))
-        ALLOCATE(GP_TTRIAL2_HIST    (MAX_GLOBAL_GP))
-
-        ALLOCATE(GP_IS_STICKING     (MAX_GLOBAL_GP))
-        ALLOCATE(GP_INITIALIZED     (MAX_GLOBAL_GP))
-
-        ! Initialize state
+        ! Initialize IDs
         GP_GLOBAL_ID        = 0
         GP_SECONDARY_EL_ID  = 0
         GP_MASTER_EL_ID     = 0
         GP_MASTER_EL_ID_PREV= 0
-
-        GP_XI1_GLOBAL       = 0.d0
-        GP_XI2_GLOBAL       = 0.d0
-        GP_XI1_GLOBAL_PREV  = 0.d0
-        GP_XI2_GLOBAL_PREV  = 0.d0
-
-        GP_XI1_PERIOD       = 0
-        GP_XI2_PERIOD       = 0
-
-        GP_TTRIAL1_HIST     = 0.d0
-        GP_TTRIAL2_HIST     = 0.d0
-
-        GP_IS_STICKING      = .FALSE.
-        GP_INITIALIZED      = .FALSE.
       ENDIF
 
 C==========================================================
@@ -989,9 +935,8 @@ C NEW STS ALGORITHM - UNIFIED FOR GAUSS AND LOBATTO
 C==========================================================
 C
 
-
         ! Find contact partners/candidates only once
-        CALL REMAP_SEGMENTS_STS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG,
+        CALL STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG,
      &   INTBUF_TAB%IRECTM, CONT_ELEMENT, COUNT, IGRSURF,
      &   CAND_SEC_SEG_ID, CAND_MST_SEG_ID, MAX_STS_SIZE_ACTUAL)
 
@@ -1046,18 +991,12 @@ C
         QFRICT = 0.d0 !Friction energy
         ALPHA0 = XFILTR_FRIC !Parameter for friction force calculation
                
-        CALL PROCESS_STS_CONTACTS(CONT_ELEMENT, COUNT, OPTION,
+       CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION,
      &   CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
      &   load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
      &   FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
      &   V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
-     &   INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST,
-     &   GP_XI1_GLOBAL, GP_XI2_GLOBAL,
-     &   GP_XI1_GLOBAL_PREV, GP_XI2_GLOBAL_PREV,
-     &   GP_XI1_PERIOD, GP_XI2_PERIOD,
-     &   GP_INITIALIZED,
-     &   GP_TTRIAL1_HIST, GP_TTRIAL2_HIST,
-     &   GP_IS_STICKING)
+     &   INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
         !IMPACT_glob indicates if any contact was found
 
         ! If no contact found with GAUSS algorithm, try LOBATTO algorithm
@@ -1074,18 +1013,12 @@ C
             OPTION = 1 !FOR LOBATTO STS ALGORITHM
             QFRICT = 0.d0
             ALPHA0 = XFILTR_FRIC
-            CALL PROCESS_STS_CONTACTS(CONT_ELEMENT, COUNT, OPTION,
+            CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION,
      &      CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
      &      load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
      &      FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
      &      V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
-     &      INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST,
-     &      GP_XI1_GLOBAL, GP_XI2_GLOBAL,
-     &      GP_XI1_GLOBAL_PREV, GP_XI2_GLOBAL_PREV,
-     &      GP_XI1_PERIOD, GP_XI2_PERIOD,
-     &      GP_INITIALIZED,
-     &      GP_TTRIAL1_HIST, GP_TTRIAL2_HIST,
-     &      GP_IS_STICKING)
+     &      INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
           
             IF (IMPACT_glob == 0) THEN
                 WRITE(*,*) "NO IMPACT FOUND WITH LOBATTO SEARCH ALGORITHM"
