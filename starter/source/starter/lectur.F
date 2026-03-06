@@ -835,7 +835,7 @@ C
 
 C     Hardcoded parameters for Q1Np generation from surface, TODO
       INTEGER ISURF_ID_TEST
-      PARAMETER (ISURF_ID_TEST=100) !!! Set it a high number to skip smoothing !!!
+      PARAMETER (ISURF_ID_TEST=1) !!! Set it a high number to skip smoothing !!!
       INTEGER P_TEST,Q_TEST
       PARAMETER (P_TEST=2,Q_TEST=2)
       INTEGER NSEG_SURF
