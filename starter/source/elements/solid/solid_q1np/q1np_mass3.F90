@@ -13,7 +13,6 @@
       module q1np_mass3_mod
         use message_mod
         use q1np_restart_mod
-        use q1np_volume_mod
         use precision_mod, only : WP
         use constant_mod,  only : ZERO, HALF, FOURTH, SIX
         use element_mod   , only : NIXS
@@ -75,23 +74,18 @@
             mid = kq1np_tab(1, iel)
             ip  = kq1np_tab(11, iel)
             if (ip <= 0) cycle
-!           Compute Q1NP volume
-            call q1np_compute_volume_element(iel, &
-     &        kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
-     &        q1np_ktab_g, x, q1np_nx_g, q1np_ny_g, &
-     &        volu_q1np)
+!           Use precomputed Q1NP/HEX8 volume from VOLU
+            volu_q1np = volu(iel_hex8)
 !           Optional debug: compare Q1NP volume with original HEX8 volume
             if (IDEBUG_Q1NP >= 2) then
               if (iel_hex8 > 0 .and. iel_hex8 <= numels) then
-                write(*,'(A,I6,A,I6,2(A,1P,E12.5),A,1P,E12.5)') &
+                write(*,'(A,I6,A,I6,2(A,1P,E12.5))') &
      &            'Q1NP MASS DBG: IEL_Q1NP=', iel, ' HEX8=', iel_hex8, &
-     &            ' VOL_HEX8=', volu(iel_hex8), &
-     &            ' VOL_Q1NP=', volu_q1np, &
-     &            ' RATIO_Q1NP_HEX8=', volu_q1np / max(volu(iel_hex8), ZERO)
+     &            ' VOL_HEX8(Q1NP)=', volu(iel_hex8), &
+     &            ' VOL_Q1NP_USED=', volu_q1np
               else
-                write(*,'(A,I6,A,I6,A,1P,E12.5)') &
-     &            'Q1NP MASS DBG: IEL_Q1NP=', iel, ' HEX8=', iel_hex8, &
-     &            ' VOL_Q1NP=', volu_q1np
+                write(*,'(A,I6,A,I6)') &
+     &            'Q1NP MASS DBG: IEL_Q1NP=', iel, ' HEX8=', iel_hex8
               end if
             end if
 !           Get density
