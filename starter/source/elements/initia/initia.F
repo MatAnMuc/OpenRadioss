@@ -431,7 +431,8 @@ C      INTEGER *8 I8MI(6,NUMNOD)
       my_real, DIMENSION(:), ALLOCATABLE ::
      .    MBUFEL_TMP, MDEPL_TMP,PARTSAV,MCPS,MCPSX,
      .    MS_LAYERC,ZI_LAYERC, MSZ2C,ZPLY,PARTSAV1_PON,MCPP,
-     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8
+     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8,
+     .    VOLU_Q1NP
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: IRIG_NODE, CONNEC
       my_real, DIMENSION(:), ALLOCATABLE :: PART_AREA,ELE_AREA
@@ -1106,8 +1107,7 @@ C                      Q1NP_NY_G is the number of knot vector points in the y di
                      ELSE
                        GBUF%VOL(IEL_LOCAL) = ONE  ! Fallback if knot vectors not available
                      ENDIF
-                     
-! TODO: CHECK IF THIS IS VALID
+                  
 
                    ENDIF
                  ENDIF
@@ -2244,6 +2244,27 @@ C---------------------------------------------
 C     Q1Np enriched element mass calculation
 C---------------------------------------------
       IF (NUMELQ1NP_G > 0) THEN
+C       Global Q1NP volume computation
+        IF (ASSOCIATED(Q1NP_KTAB_G)) THEN
+          ALLOCATE(VOLU_Q1NP(NUMELQ1NP_G), STAT=STAT)
+          IF (STAT /= 0) THEN
+            CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,
+     .                  C1='VOLU_Q1NP')
+          ENDIF
+          VOLU_Q1NP(1:NUMELQ1NP_G) = ZERO
+
+          DO IEL = 1, NUMELQ1NP_G
+            IEL_HEX8 = KQ1NP_TAB(10, IEL)
+            IF (IEL_HEX8 <= 0 .OR. IEL_HEX8 > NUMELS) CYCLE
+
+            CALL Q1NP_COMPUTE_VOLUME_ELEMENT(
+     .          IEL,
+     .          KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
+     .          Q1NP_KTAB_G, X, Q1NP_NX_G, Q1NP_NY_G,
+     .          VOLU_Q1NP(IEL))
+          END DO
+        END IF
+
 C       Allocate temporary arrays for Q1Np mass calculation
         ALLOCATE(RHO_HEX8(NUMELS),STAT=STAT)
         IF(STAT /= 0) THEN
