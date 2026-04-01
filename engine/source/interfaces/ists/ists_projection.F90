@@ -2,13 +2,13 @@
 ! Project point to surface parameterization
 !-----------------------------------------------
 !||====================================================================
-!||    sts_project             ../engine/source/interfaces/ists/ists_sts_project.F90
+!||    sts_projection             ../engine/source/interfaces/ists/ists_projection.F90
 !||--- calls --------------------------------------------------------- 
 !||    sts_shape               ../engine/source/interfaces/ists/ists_shape_fct.F90
 !||    sts_pos                 ../engine/source/interfaces/ists/ists_pos.F90
-!||    sts_surfgeom            ../engine/source/interfaces/ists/ists_sts_surfgeom.F90
+!||    sts_surfgeom            ../engine/source/interfaces/ists/ists_sufgeom.F90
 !||--- called by ----------------------------------------------------- 
-!||    STS_CONTACT_EVAL_PAIR    ../engine/source/interfaces/ists/ists_gen_sts.F90
+!||    STS_CONTACT_EVAL_PAIR    ../engine/source/interfaces/ists/ists_contact_eval_pair.F90
 !||====================================================================
       subroutine sts_project(xupd,xi1,xi2,eta1,eta2)
 !-----------------------------------------------

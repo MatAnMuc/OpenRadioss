@@ -31,6 +31,8 @@
 !     - q1np_elements.csv       (cp_node_*, bulk_node_* = global node IDs)
 !     - q1np_bulk_nodes.csv     (node_id,x,y,z)
 !     - q1np_surface_nodes.csv  (node_id,grid_i,grid_j,x,y,z)
+!     - hex8_elements.csv       (iel,elem_id,n1..n8 from IXS(2:9), IXS(11)=elem_id)
+!     - hex8_nodes.csv          (node_id,x,y,z for nodes used by exported HEX8)
 !=======================================================================
       module q1np_export_csv_mod
         use precision_mod, only : WP
@@ -156,35 +158,25 @@
         end subroutine q1np_export_nurbs_csv
 
 !=======================================================================
-        subroutine q1np_export_bulk_nodes_csv(numelq1np_out, &
+        subroutine q1np_export_bulk_nodes_csv(numelq1np_out, numnod, &
      &                                         kq1np_tab, iq1np_bulk_tab, x)
 ! ----------------------------------------------------------------------------------------------------------------------
           implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
-          integer, intent(in) :: numelq1np_out
-          integer, intent(in) :: kq1np_tab(15, *)
-          integer, intent(in) :: iq1np_bulk_tab(*)
-          real(kind=WP), intent(in) :: x(3, *)
+          integer, intent(in) :: numelq1np_out, numnod
+          integer, intent(in) :: kq1np_tab(15, numelq1np_out)
+          integer, intent(in) :: iq1np_bulk_tab(:)
+          real(kind=WP), intent(in) :: x(3, numnod)
 ! ----------------------------------------------------------------------------------------------------------------------
           integer :: iel, offset_bulk, i, node_id
           integer :: unit_bn, ios
           integer, allocatable :: mark(:)
-          integer :: maxnode
+          !if (numnod .le. 0) return
+          !if (size(x, 1) < 3) return
+          !if (size(x, 2) < numnod) return
+          !if (size(kq1np_tab, 1) < 14) return
 
-!--- assume global max node ID is stored in IP4, or similar;
-!    if not, you can set MAXNODE explicitly or loop to find max:
-!    MAXNODE = 0; do over all bulk entries, MAXNODE = max(MAXNODE, IQ1NP_BULK_TAB(...))
-          maxnode = 0
-          do iel = 1, numelq1np_out
-            offset_bulk = kq1np_tab(14, iel)
-            do i = 0, 3
-              node_id = iq1np_bulk_tab(offset_bulk + i)
-              if (node_id > maxnode) maxnode = node_id
-            end do
-          end do
-          if (maxnode .le. 0) return
-
-          allocate(mark(maxnode))
+          allocate(mark(numnod))
           mark = 0
 
 !--- Mark all bulk nodes that are used
@@ -192,7 +184,7 @@
             offset_bulk = kq1np_tab(14, iel)
             do i = 0, 3
               node_id = iq1np_bulk_tab(offset_bulk + i)
-              if (node_id .gt. 0 .and. node_id .le. maxnode) mark(node_id) = 1
+              if (node_id .gt. 0 .and. node_id .le. numnod) mark(node_id) = 1
             end do
           end do
 
@@ -206,7 +198,7 @@
           end if
 
           write(unit_bn, '(A)') 'node_id,x,y,z'
-          do node_id = 1, maxnode
+          do node_id = 1, numnod
             if (mark(node_id) .eq. 0) cycle
             write(unit_bn, &
      &        '(I0,'','',ES22.14,'','',ES22.14,'','',ES22.14)') node_id, &
@@ -223,8 +215,6 @@
 !   Caller passes GRID_NODE such that GRID_NODE(1:NX+1,1:NY+1) holds node IDs (0 if missing).
 !=======================================================================
         subroutine q1np_export_surface_nodes_csv(nx, ny, x_grid, grid_node)
-! ----------------------------------------------------------------------------------------------------------------------
-!                                                   Implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
           implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
@@ -259,5 +249,148 @@
 
           return
         end subroutine q1np_export_surface_nodes_csv
+
+!=======================================================================
+!   FUNCTION TO CHECK IF AN ELEMENT IS A BRICK8
+!   True if IXS(2:9,iel) are eight positive, pairwise different node IDs.
+!=======================================================================
+        logical function q1np_ixs_is_distinct_brick8(ixs, nixs, iel)
+! ----------------------------------------------------------------------------------------------------------------------
+          implicit none
+! ----------------------------------------------------------------------------------------------------------------------
+          integer, intent(in) :: nixs, iel
+          integer, intent(in) :: ixs(nixs, *)
+! ----------------------------------------------------------------------------------------------------------------------
+          integer :: n8(8), ii, jj
+! ----------------------------------------------------------------------------------------------------------------------
+          q1np_ixs_is_distinct_brick8 = .false.
+          if (iel < 1) return
+          if (nixs < 9) return
+          do ii = 1, 8
+            n8(ii) = ixs(1 + ii, iel)
+          end do
+          do ii = 1, 8
+            if (n8(ii) <= 0) return
+          end do
+          do ii = 1, 8
+            do jj = ii + 1, 8
+              if (n8(ii) == n8(jj)) return
+            end do
+          end do
+          q1np_ixs_is_distinct_brick8 = .true.
+        end function q1np_ixs_is_distinct_brick8
+
+!=======================================================================
+!   Export all 8-node brick solids (IXS(2:9)=nodes, IXS(11)=user element id).
+
+!   HEX8 elements that are replaced by a Q1NP element (KQ1NP_TAB(10,:) = local
+!   IXS index) are omitted so the CSV matches “remaining” classical bricks only.
+!=======================================================================
+        subroutine q1np_export_hex8_csv(numels, nixs, ixs, x, numnod, &
+     &                                  numelq1np_in, kq1np_tab, nkq1np)
+! ----------------------------------------------------------------------------------------------------------------------
+          implicit none
+! ----------------------------------------------------------------------------------------------------------------------
+          integer, intent(in) :: numels, nixs, numnod
+          integer, intent(in) :: numelq1np_in, nkq1np
+          integer, intent(in) :: ixs(nixs, *)
+          integer, intent(in) :: kq1np_tab(nkq1np, *)
+          real(kind=WP), intent(in) :: x(3, *)
+! ----------------------------------------------------------------------------------------------------------------------
+          integer :: iel, i, node_id, unit_el, unit_nd, ios, maxnode
+          integer :: iq, iel_hex
+          integer, allocatable :: mark(:)
+          logical, allocatable :: skip_q1np_under(:)
+! ----------------------------------------------------------------------------------------------------------------------
+          allocate(skip_q1np_under(numels))
+          skip_q1np_under = .false.
+          if (numelq1np_in > 0) then
+            do iq = 1, numelq1np_in
+              iel_hex = kq1np_tab(10, iq)
+              if (iel_hex >= 1 .and. iel_hex <= numels) then
+                skip_q1np_under(iel_hex) = .true.
+              end if
+            end do
+          end if
+
+          maxnode = 0
+          do iel = 1, numels
+            if (skip_q1np_under(iel)) cycle
+            if (.not. q1np_ixs_is_distinct_brick8(ixs, nixs, iel)) cycle
+            do i = 2, 9
+              node_id = ixs(i, iel)
+              if (node_id > maxnode) maxnode = node_id
+            end do
+          end do
+
+          unit_el = 991
+          open(unit=unit_el, file='hex8_elements.csv', &
+     &         status='UNKNOWN', form='FORMATTED', iostat=ios)
+          if (ios .ne. 0) then
+            deallocate(skip_q1np_under)
+            return
+          end if
+
+          write(unit_el, '(A)') &
+     &    'iel,elem_id,n1,n2,n3,n4,n5,n6,n7,n8'
+
+          do iel = 1, numels
+            if (skip_q1np_under(iel)) cycle
+            if (.not. q1np_ixs_is_distinct_brick8(ixs, nixs, iel)) cycle
+            write(unit_el, &
+     &        '(I0,'','',I0,8('','',I0))') &
+     &        iel, &
+     &        ixs(11, iel), &
+     &        ixs(2, iel), ixs(3, iel), ixs(4, iel), ixs(5, iel), &
+     &        ixs(6, iel), ixs(7, iel), ixs(8, iel), ixs(9, iel)
+          end do
+          close(unit_el)
+
+          if (maxnode .le. 0) then
+            unit_nd = 992
+            open(unit=unit_nd, file='hex8_nodes.csv', &
+     &           status='UNKNOWN', form='FORMATTED', iostat=ios)
+            if (ios .eq. 0) then
+              write(unit_nd, '(A)') 'node_id,x,y,z'
+              close(unit_nd)
+            end if
+            deallocate(skip_q1np_under)
+            return
+          end if
+
+          allocate(mark(maxnode))
+          mark = 0
+          do iel = 1, numels
+            if (skip_q1np_under(iel)) cycle
+            if (.not. q1np_ixs_is_distinct_brick8(ixs, nixs, iel)) cycle
+            do i = 2, 9
+              node_id = ixs(i, iel)
+              if (node_id .gt. 0 .and. node_id .le. maxnode) mark(node_id) = 1
+            end do
+          end do
+
+          unit_nd = 992
+          open(unit=unit_nd, file='hex8_nodes.csv', &
+     &         status='UNKNOWN', form='FORMATTED', iostat=ios)
+          if (ios .ne. 0) then
+            deallocate(mark)
+            deallocate(skip_q1np_under)
+            return
+          end if
+
+          write(unit_nd, '(A)') 'node_id,x,y,z'
+          do node_id = 1, maxnode
+            if (mark(node_id) .eq. 0) cycle
+            if (node_id .gt. numnod) cycle
+            write(unit_nd, &
+     &        '(I0,'','',ES22.14,'','',ES22.14,'','',ES22.14)') node_id, &
+     &        x(1, node_id), x(2, node_id), x(3, node_id)
+          end do
+          close(unit_nd)
+
+          deallocate(mark)
+          deallocate(skip_q1np_under)
+          return
+        end subroutine q1np_export_hex8_csv
 
       end module q1np_export_csv_mod

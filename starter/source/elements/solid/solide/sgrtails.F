@@ -484,36 +484,15 @@ C
          NGP_START(P)=0
        ENDDO
 
-       DO P = 1, NSPMD+1
-        IF (P+1 <= NSPMD+1) THEN
-          NEL = DD_IAD(P+1,NSPGROUP+N)-DD_IAD(P,NSPGROUP+N)
-        ELSE
-          NEL = TOTAL_EL - DD_IAD(P,NSPGROUP+N) + 1
-        ENDIF
-       ENDDO
-
        DO P = 1, NSPMD
         ICPT10 = -HUGE(ICPT10)
         NGP(P)=0
         NEL = DD_IAD(P+1,NSPGROUP+N)-DD_IAD(P,NSPGROUP+N)
         IF (NEL>0) THEN
-C         Process processor if it has elements
-C         Note: If P > NSPMD, map to processor NSPMD (1-based)
-         IF (P <= NSPMD) THEN
-           NEL_PREC = DD_IAD(P,NSPGROUP+N)-DD_IAD(1,NSPGROUP+N)
-           NGP(P)=NGROUP
-           NGP_START(P)=NGROUP
-         ELSE
-C          Processor beyond NSPMD: map to last processor (NSPMD)
+         NEL_PREC = DD_IAD(P,NSPGROUP+N)-DD_IAD(1,NSPGROUP+N)
+         NGP(P)=NGROUP
+         NGP_START(P)=NGROUP
 
-           NEL_PREC = DD_IAD(P,NSPGROUP+N)-DD_IAD(1,NSPGROUP+N)
-C          If NGP_START(NSPMD) not yet set, set it now
-C          If NGP(NSPMD) was already finalized, we need to track the start for this mapping
-           IF (NGP_START(NSPMD) == 0) THEN
-             NGP_START(NSPMD)=NGROUP
-           ENDIF
-C          If NGP(NSPMD) is already finalized, we'll add groups to it at the end
-         ENDIF
          NG  = (NEL-1)/NVSIZ + 1
          DO 220 I=1,NG
 C ngroup global
