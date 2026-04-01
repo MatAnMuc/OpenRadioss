@@ -28,12 +28,58 @@
 !   Each segment is a quad with 4 nodes; segments share edges.
 !   Uses BFS from segment 1 to assign (I,J) grid indices and to fill
 !   GRID_NODE (node IDs at grid points) and GRID_TO_SEG (segment at (I,J)).
-!   IERR: 0=ok, 3=rotation mismatch, 4=disconnected, 5=non-rectangular, 7=bounds.
+!   IERR: 0=ok, 3=corner ordering mismatch, 4=disconnected,
+!         5=non-rectangular/inconsistent, 7=bounds.
 !=======================================================================
       module q1np_surf_grid_mod
         use groupdef_mod
         implicit none
       contains
+        integer function q1np_local_edge_from_pair(corner_a, corner_b)
+          implicit none
+          integer, intent(in) :: corner_a, corner_b
+          integer :: cmin, cmax
+
+          cmin = min(corner_a, corner_b)
+          cmax = max(corner_a, corner_b)
+
+          q1np_local_edge_from_pair = 0
+          if (cmin .eq. 1 .and. cmax .eq. 4) then
+            q1np_local_edge_from_pair = 1
+          else if (cmin .eq. 2 .and. cmax .eq. 3) then
+            q1np_local_edge_from_pair = 2
+          else if (cmin .eq. 1 .and. cmax .eq. 2) then
+            q1np_local_edge_from_pair = 3
+          else if (cmin .eq. 3 .and. cmax .eq. 4) then
+            q1np_local_edge_from_pair = 4
+          end if
+        end function q1np_local_edge_from_pair
+
+        integer function q1np_grid_dir_to_local_edge(corner_order, grid_dir)
+          implicit none
+          integer, intent(in) :: corner_order(4), grid_dir
+          integer :: corner_a, corner_b
+
+          corner_a = 0
+          corner_b = 0
+          select case (grid_dir)
+          case (1)
+            corner_a = corner_order(4)
+            corner_b = corner_order(1)
+          case (2)
+            corner_a = corner_order(2)
+            corner_b = corner_order(3)
+          case (3)
+            corner_a = corner_order(1)
+            corner_b = corner_order(2)
+          case (4)
+            corner_a = corner_order(3)
+            corner_b = corner_order(4)
+          end select
+
+          q1np_grid_dir_to_local_edge = q1np_local_edge_from_pair(corner_a, corner_b)
+        end function q1np_grid_dir_to_local_edge
+
         subroutine q1np_build_surf_grid(surf, nseg, &
      &                                  nx, ny, seg_i, seg_j, &
      &                                  grid_node, grid_to_seg, ierr)
@@ -54,18 +100,20 @@
 !                                                   Local variables
 ! ----------------------------------------------------------------------------------------------------------------------
           integer, parameter :: off = 2048
-          integer, allocatable :: neighbor(:, :)
+          integer, allocatable :: neighbor(:, :), seg_corner(:, :)
+          integer, allocatable :: qseg(:), qi(:), qj(:)
+          logical, allocatable :: assigned(:)
           integer :: nodes(4), n1, n2, na, nb, na2, nb2
-          integer :: iseg, jseg, k, kk, dir, idir, d
+          integer :: iseg, jseg, k, kk, dir, idir, d, dir_local
           integer :: ii, jj, i_min, i_max, j_min, j_max
           integer :: head, tail, nassign
-          integer :: idx, i1, i2, next(4)
+          integer :: idx, itr, ii_new, jj_new, next(4)
           integer :: gi(4), gj(4), base(4), cand(4), exist(4)
           integer :: grid_node_tmp(1-off:off*2+1, 1-off:off*2+1)
-          integer :: qseg(4*off), qi(4*off), qj(4*off)
 !     Direction order for BFS: right(2), top(4), left(1), bottom(3)
           integer :: dir_list(4), delta_i(4), delta_j(4)
           integer :: gioff(4, 4), gjoff(4, 4)
+          integer :: corner_xform(4, 8)
           integer :: jseg_found
           data next / 2, 3, 4, 1 /
           data dir_list / 2, 4, 1, 3 /
@@ -74,15 +122,28 @@
 !     Grid offsets for neighbor quad corners (dir, corner): 1=left, 2=right, 3=bottom, 4=top
           data gioff / -1, 1, 0, 0,  0, 2, 1, 1,  0, 2, 1, 1,  -1, 1, 0, 0 /
           data gjoff / 0, 0, -1, 1,  0, 0, -1, 1,  1, 1, 0, 2,  1, 1, 0, 2 /
+!     Try the four cyclic rotations first, then the four mirrored orderings.
+          data corner_xform / &
+     &      1, 2, 3, 4, &
+     &      2, 3, 4, 1, &
+     &      3, 4, 1, 2, &
+     &      4, 1, 2, 3, &
+     &      1, 4, 3, 2, &
+     &      4, 3, 2, 1, &
+     &      3, 2, 1, 4, &
+     &      2, 1, 4, 3 /
 !=======================================================================
           ierr = 0
           nx = 0
           ny = 0
-          allocate(neighbor(nseg, 4))
+          allocate(neighbor(nseg, 4), assigned(nseg), seg_corner(4, nseg))
+          allocate(qseg(nseg), qi(nseg), qj(nseg))
 
           seg_i(1:nseg) = 0
           seg_j(1:nseg) = 0
           neighbor(1:nseg, 1:4) = 0
+          assigned(1:nseg) = .false.
+          seg_corner(1:4, 1:nseg) = 0
 
 !     --- Build neighbor list ---
 !     For each segment and each edge (DIR): find segment sharing that edge.
@@ -138,8 +199,10 @@
           qseg(1) = 1
           qi(1) = 1
           qj(1) = 1
+          assigned(1) = .true.
           seg_i(1) = 1
           seg_j(1) = 1
+          seg_corner(1:4, 1) = (/ 1, 2, 3, 4 /)
           do k = 1, 4
             nodes(k) = surf%nodes(1, k)
           end do
@@ -162,16 +225,17 @@
 !       Process each direction: if unvisited neighbor exists, enqueue and assign node IDs
             do idir = 1, 4
               d = dir_list(idir)
-              jseg = neighbor(iseg, d)
-              if (jseg .le. 0 .or. seg_i(jseg) .ne. 0) cycle
+              dir_local = q1np_grid_dir_to_local_edge(seg_corner(1:4, iseg), d)
+              if (dir_local .le. 0) then
+                ierr = 3
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                return
+              end if
 
-              seg_i(jseg) = ii + delta_i(d)
-              seg_j(jseg) = jj + delta_j(d)
-              nassign = nassign + 1
-              tail = tail + 1
-              qseg(tail) = jseg
-              qi(tail) = seg_i(jseg)
-              qj(tail) = seg_j(jseg)
+              jseg = neighbor(iseg, dir_local)
+              if (jseg .le. 0) cycle
+              ii_new = ii + delta_i(d)
+              jj_new = jj + delta_j(d)
 
               do k = 1, 4
                 base(k) = surf%nodes(jseg, k)
@@ -182,24 +246,54 @@
                 exist(k) = grid_node_tmp(gi(k), gj(k))
               end do
 
-!         Find rotation (0..3) of neighbor's nodes so CAND matches already-assigned EXIST
-              idx = -1
-              do i1 = 0, 3
-                do k = 1, 4
-                  i2 = 1 + mod(k - 1 + i1, 4)
-                  cand(k) = base(i2)
-                  if (exist(k) .gt. 0 .and. exist(k) .ne. cand(k)) exit
+!         Find a corner ordering for the neighbor.
+              if (.not. assigned(jseg)) then
+                idx = 0
+                do itr = 1, 8
+                  do k = 1, 4
+                    cand(k) = base(corner_xform(k, itr))
+                    if (exist(k) .gt. 0 .and. exist(k) .ne. cand(k)) exit
+                  end do
+                  if (k .gt. 4) then
+                    idx = itr
+                    exit
+                  end if
                 end do
-                if (k .gt. 4) then
-                  idx = i1
-                  exit
-                end if
-              end do
 
-              if (idx .lt. 0) then
-                ierr = 3
-                deallocate(neighbor)
-                return
+                if (idx .le. 0) then
+                  ierr = 3
+                  deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                  return
+                end if
+
+                assigned(jseg) = .true.
+                seg_i(jseg) = ii_new
+                seg_j(jseg) = jj_new
+                seg_corner(1:4, jseg) = corner_xform(1:4, idx)
+                nassign = nassign + 1
+                tail = tail + 1
+                if (tail .gt. nseg) then
+                  ierr = 7
+                  deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                  return
+                end if
+                qseg(tail) = jseg
+                qi(tail) = ii_new
+                qj(tail) = jj_new
+              else
+                if (seg_i(jseg) .ne. ii_new .or. seg_j(jseg) .ne. jj_new) then
+                  ierr = 5
+                  deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                  return
+                end if
+                do k = 1, 4
+                  cand(k) = base(seg_corner(k, jseg))
+                  if (exist(k) .gt. 0 .and. exist(k) .ne. cand(k)) then
+                    ierr = 3
+                    deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                    return
+                  end if
+                end do
               end if
 
               do k = 1, 4
@@ -211,7 +305,7 @@
 !     --- Sanity: all segments must have been assigned (connected surface) ---
           if (nassign .ne. nseg) then
             ierr = 4
-            deallocate(neighbor)
+            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
             return
           end if
 
@@ -231,7 +325,7 @@
 
           if (nx*ny .ne. nseg) then
             ierr = 5
-            deallocate(neighbor)
+            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
             return
           end if
 
@@ -251,7 +345,7 @@
 !     --- Copy GRID_NODE_TMP into output GRID_NODE (1-based, size (NX+1)*(NY+1)) ---
           if (nx+1 .gt. nseg*4 .or. ny+1 .gt. nseg*4) then
             ierr = 7
-            deallocate(neighbor)
+            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
             return
           end if
 
@@ -261,7 +355,7 @@
             end do
           end do
 
-          deallocate(neighbor)
+          deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
 
           return
         end subroutine q1np_build_surf_grid

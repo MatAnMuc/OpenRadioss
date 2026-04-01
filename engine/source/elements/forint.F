@@ -64,6 +64,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    suforc3                 ../engine/source/user_interface/suforc3.F
 !||    szforc3                 ../engine/source/elements/solid/solidez/szforc3.F
 !||    tforc3                  ../engine/source/elements/truss/tforc3.F
+!||    q1np_dump_hist_state    ../engine/source/elements/solid/solid_q1np/q1np_dump_hist_state.F90
 !||--- uses       -----------------------------------------------------
 !||    ale_connectivity_mod    ../common_source/modules/ale/ale_connectivity_mod.F
 !||    ale_mod                 ../common_source/modules/ale/ale_mod.F
@@ -86,7 +87,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    sfem_mod                ../common_source/modules/elements/sfem_mod.F90
 !||    table_mod               ../engine/share/modules/table_mod.F
 !||    timer_mod               ../engine/source/system/timer_mod.F90
-!||    Q1NP_FORC3                    source/elements/solid/solid_q1np/q1np_forc3.F
+!||    Q1NP_FORC3              ../engine/source/elements/solid/solid_q1np/q1np_forc3.F
 !||====================================================================
       SUBROUTINE FORINT(TIMERS, PYTHON, 
      1    PM        ,GEO       ,X          ,A         ,AR        ,
@@ -152,6 +153,7 @@ C-----------------------------------------------
      .                   Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB
       USE Q1NP_RESTART_MOD
       use sfem_mod
+      USE DEBUG_MOD, ONLY : ITAB_DEBUG
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -260,7 +262,9 @@ C-----------------------------------------------
      .   L1,L2,L3,L4,L5,L6,L7,L8,L9,L10,L11,L12,L13,L14,L15,L16,
      .   L17,L18,L19,L20,L21,L22,L23,L24,L25,L26,L27,L28,L29,L30,
      .   ICP,ICS,IMATVIS,IEXPAN,NPT0,IG,OFF_IGRTH,
-     .   NCTRL,IPARSENS,ISECT,GAMA(6),PX,PY,PZ,ISENS_ENERGY
+     .   NCTRL,IPARSENS,ISECT,GAMA(6),PX,PY,PZ,ISENS_ENERGY,
+     .   IEL_Q1NP_GRP
+      LOGICAL IS_Q1NP_GROUP
       my_real BID,QMVBID,PRELOAD1,STF_F
       my_real SBID
       my_real VOLN(MVSIZ)
@@ -268,6 +272,7 @@ C-----------------------------------------------
       my_real, DIMENSION(MVSIZ,6) :: SVIS
       TYPE(G_BUFEL_) ,POINTER :: GBUF
       integer :: fake_size = 0
+      LOGICAL :: DUMP_Q1NP_STATE = .TRUE.
 C======================================================================|
        ALLOCATE(FX(MVSIZ,64),FY(MVSIZ,64),FZ(MVSIZ,64),STAT=IERROR)
        ALLOCATE(MX(MVSIZ,4),MY(MVSIZ,4),MZ(MVSIZ,4),STAT=IERROR)
@@ -1089,9 +1094,43 @@ C-------------------------
      9           DMELS(NF1),ITASK ,IPRI    ,JTHE    ,TABLE    ,
      A           IDTMINS,DTFACS   ,DTMINS)
 C--------------------------
-          ELSEIF (NPT == 1)THEN
+          ELSEIF (NPT == 1 .OR. NPT == 18)THEN
 C--------------------------
             IF (JHBE == 24) THEN
+C-------------------------
+C              Handle Replacement of HEPH with Q1NP
+C-------------------------
+               IS_Q1NP_GROUP = .FALSE.
+               
+               IF (NUMELQ1NP_G > 0 .AND. ALLOCATED(KQ1NP_TAB) .AND.
+     .             ALLOCATED(IQ1NP_TAB)) THEN
+                 DO I = 1, NEL
+                   DO IEL_Q1NP_GRP = 1, NUMELQ1NP_G
+                     IF (KQ1NP_TAB(5,IEL_Q1NP_GRP) == IXS(NIXS,NFT + I)) THEN
+                       IS_Q1NP_GROUP = .TRUE.
+                       EXIT
+                     ENDIF
+                   ENDDO
+                   IF (IS_Q1NP_GROUP) EXIT
+                 ENDDO
+               ENDIF
+
+             IF (IS_Q1NP_GROUP) THEN
+C
+               CALL Q1NP_FORC3(TIMERS, OUTPUT,
+     1         ELBUF_TAB(NG), PM, GEO, IXS, IGEO, X, A, V, W,
+     2         FV, ALE_CONNECT, IPARG, TF, NPC, BUFMAT, PARTSAV, NPART,
+     3         NLOC_DMG, STIFN, OFFSET, IPARTS(NF1), NEL, DT2T,
+     4         NELTST, ITYPTST, IPM, ITASK, GRESAV, GRTH,
+     5         IGRTH(NF1), MSSA(NF1), DMELS(NF1), TABLE, IPRI,
+     6         MAT_ELEM, NG, H3D_DATA%STRAIN, SVIS, GLOB_THERM,
+     7         SNPC, NUMGEO, NUMNOD, NUMELS, NUMELQ, NGROUP,
+     8         SBUFMAT, STF, NUMMAT, NTABLE, NSVOIS, IRESP,
+     9         IDEL7NOK, MAXFUNC, USERL_AVAIL, IMON_MAT, impl_s,
+     A         idyna, IDTMIN, DT, SENSORS)
+             
+             ELSE
+
 C-------------------------
 C              SOLID HEPH FORMULATION
 C-------------------------
@@ -1119,11 +1158,11 @@ C
      J         OUTPUT,NSVOIS,IBID,SNPC,STF,SBUFMAT,SVIS,IRESP,
      K         MAXFUNC,  USERL_AVAIL, GLOB_THERM, impl_s   ,idyna)
 C
+            ENDIF !(IS_Q1NP_GROUP)
             ELSE
 C-------------------------
 C             STANDARD 8 NODE SOLID ELEMENT (JHBE = 1,2,101,102)
-C-------------------------
-              !
+C-------------------------  
               CALL SFORC3(TIMERS, OUTPUT,
      1   ELBUF_TAB,  NG,         PM,         GEO,
      2   IXS,        X,          NV46,       A,
@@ -1226,25 +1265,7 @@ C
                 K0=NSTRF(K0+24)
                ENDDO
             ENDIF
-          ENDIF
-C----6---------------------------------------------------------------7---------8
-C     Q1Np enriched elements processing
-C----6---------------------------------------------------------------7---------8
-!          IF (NUMELQ1NP_G > 0 .AND. ITY == 1 .AND. JLAG == 1) THEN
-!     TEMPORARILY DISABLED FOR DEBUGGING PURPOSES
-!            IF (ALLOCATED(KQ1NP_TAB) .AND. ALLOCATED(IQ1NP_TAB)) THEN
-!              CALL Q1NP_FORC3(
-!     1        ELBUF_TAB(NG),PM           ,GEO      ,X         ,           
-!     2        A          ,V            ,MS       ,                       
-!     3        VEUL         ,FV       ,ALE_CONNECT     ,IPARG      ,                     
-!     4        TF       ,NPC      ,BUFMAT    ,PARTSAV    ,             
-!     5        STIFN        ,FSKY     ,IADS     ,OFFSET    ,IPARTS(NF1),           
-!     6        NEL          ,DT2T     ,NELTST   ,ITYPTST   ,IPM        ,           
-!     7        ITASK        ,GRESAV   ,GRTH     ,IGRTH(NF1),MSSA(NF1)  ,           
-!     8        DMELS(NF1)   ,TABLE,IPRI     ,MAT_ELEM,NG           )     
-!            ENDIF
-!          ENDIF
-C----6---------------------------------------------------------------7---------8
+            ENDIF
         ELSEIF(ITY==2.AND.JMULT==0.AND.JLAG==1.AND.
      .         ICRACK==0) THEN
              OFF_IGRTH = NUMELS
@@ -1590,6 +1611,16 @@ C             ROTATION IF COROTA SYSTEM
        ENDIF
   250   CONTINUE
       END DO
+C
+C     Dump Q1NP bulk and control-point coordinates for Python post-processing
+C     at output steps only, to avoid huge files.
+C
+
+      IF (NUMELQ1NP_G > 0 .AND. IPRI == 1) THEN
+        IF (DUMP_Q1NP_STATE) THEN
+         CALL Q1NP_DUMP_HIST_STATE(TT, X, ITAB)
+        ENDIF
+      ENDIF
 C
       DEALLOCATE(FX,FY,FZ,MX,MY,MZ,JFAC)
 

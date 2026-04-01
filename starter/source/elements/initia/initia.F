@@ -246,6 +246,7 @@ C-----------------------------------------------
       use ush_init_mod , only : ush_init
       use ini_guided_cable_mod, ONLY : ini_guided_cable 
       USE Q1NP_RESTART_MOD
+      USE Q1NP_INIT_LBUF_VOL_MOD
       USE Q1NP_MASS3_MOD
       USE Q1NP_VOLUME_MOD
 C-----------------------------------------------
@@ -305,7 +306,7 @@ C-----------------------------------------------
      .   IUSOLYLD,IUSER,IDDLEVEL,NBSUBMAT, TAGPRT_SMS(*),SITAGE,FXB_MATRIX_ADD(4,*),
      .   FXB_LAST_ADRESS(*),PTR_NOPT_FXB,R_SKEW(*), NPTS,KNOD2EL1D(*)  ,NOD2EL1D(*),
      .   KNOD2ELC(*),NOD2ELC(*)
-      INTEGER,INTENT(INOUT) :: KQ1NP_TAB(15,*),IQ1NP_TAB(*),IQ1NP_BULK_TAB(*)
+      INTEGER,INTENT(INOUT),TARGET :: KQ1NP_TAB(15,*),IQ1NP_TAB(*),IQ1NP_BULK_TAB(*)
       TYPE(T_EBCS_TAB), INTENT(INOUT) :: EBCS_TAB     
       INTEGER,TARGET  :: ITAGE(*)
       INTEGER,POINTER :: ptr_ITAGE
@@ -317,7 +318,7 @@ C-----------------------------------------------
       INTEGER,INTENT(IN) :: IPARI(NPARI,NINTER)
       my_real,INTENT(IN) :: FACLOAD(LFACLOAD,*)
       my_real
-     .   ELBUF(*), MS(*), IN(*), V(*), X(*), GEO(*),PM(NPROPM,*),
+     .   ELBUF(*), MS(*), IN(*), V(*), GEO(*),PM(NPROPM,*),
      .   RBY(NRBY,*),PLD(*),VEUL(*),SKEW(LSKEW,*),FILL(*),
      .   THK(*),BUFSF(*), VR(3,*),BUFMAT(*),PTG(3,*),XLAS(*),
      .   DTELEM(*),MSS(*), MSQ(*),MSC(*),MST(*),MSP(*),MSR(*),
@@ -342,10 +343,15 @@ C-----------------------------------------------
      .   SIGTRUSS(NSIGTRUSS,*),TOTMAS, KNOTLOCPC(*),KNOTLOCEL(*),VNIGE(*),BNIGE(*),
      .   FXBGLM(*),FXBCPM(*),FXBCPS(*),FXBLM(*),FXBFLS(*),FXBDLS(*),FXB_MATRIX(*),
      .   RBY_INIAXIS(7,*),ALEA(*),DR(SDR)
+      my_real,TARGET :: X(*)
       my_real,INTENT(INOUT) :: TOTMAS1
 
       my_real, DIMENSION(NUMNOD*2), TARGET :: STIFN
       my_real , DIMENSION(:), POINTER :: STIFR
+      my_real , DIMENSION(:,:), POINTER :: X_Q1NP
+      INTEGER , DIMENSION(:,:), POINTER :: KQ1NP_TAB_Q1NP
+      INTEGER , DIMENSION(:), POINTER :: IQ1NP_TAB_Q1NP
+      INTEGER , DIMENSION(:), POINTER :: IQ1NP_BULK_TAB_Q1NP
 C
       INTEGER NOM_OPT(LNOPT1,*),PTR_NOPT_RBE2,PTR_NOPT_ADM,PTR_NOPT_FUN,IOPT
       INTEGER FXBNOD(*), FXANI(2,*),ITAGND(*)
@@ -419,7 +425,8 @@ C      INTEGER *8 I8MI(6,NUMNOD)
      .   ADRRPM,ALM,ASIG,NELS,NELC,NELTG,AMOD,NBNO,NME,NML,ARPM,LVSIG,
      .   IFILE,IRCS,NELT,NELP,FXBID, ANOD, IRCM, NSNI, NSN, NMANI, IMIN, IMAX,
      .   NELEMR,CPT_ELTENS,IXFEM,ITG,ISUBSTACK,NCTRL, ITETRA10, KK,PX,PY,PZ,IPID,
-     .   IEL,IEL_HEX8,IEL_LOCAL
+     .   IEL,IEL_HEX8,IEL_LOCAL,IEL_Q1NP,IU_Q1NP,IV_Q1NP,IT_Q1NP,
+     .   NPTR_Q1NP,NPTS_Q1NP,NPTT_Q1NP
       INTEGER SOLMAT(0:MAXLAW), COQMAT(0:MAXLAW), TRUMAT(0:MAXLAW),
      .   POUMAT(0:MAXLAW),SPHMAT(0:MAXLAW),
      .   RESMAT(0:MAXLAW),RESPID(0:50), SPHPID(0:50),
@@ -428,11 +435,10 @@ C      INTEGER *8 I8MI(6,NUMNOD)
 
       INTEGER IBOLTP !Bolt preloading
       my_real DT2S, B1, B2, B3, B6, B5, B9, XG, YG, ZG, XX, YY, ZZ, XY, XZ, YZ,DTNODA,FILL_RATIO
-      my_real, DIMENSION(:), ALLOCATABLE ::
+      my_real, DIMENSION(:), ALLOCATABLE, TARGET ::
      .    MBUFEL_TMP, MDEPL_TMP,PARTSAV,MCPS,MCPSX,
      .    MS_LAYERC,ZI_LAYERC, MSZ2C,ZPLY,PARTSAV1_PON,MCPP,
-     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8,
-     .    VOLU_Q1NP
+     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: IRIG_NODE, CONNEC
       my_real, DIMENSION(:), ALLOCATABLE :: PART_AREA,ELE_AREA
@@ -440,7 +446,8 @@ C      INTEGER *8 I8MI(6,NUMNOD)
       my_real ADDEDMS(NPART),MAS,MAS_1
       INTEGER ID,ISTOT, NF1,NNOD,NSROT,IDRAPE,ICPRE
       CHARACTER(LEN=NCHARTITLE)::TITR
-      LOGICAL :: ERROR_THROWN
+      LOGICAL :: ERROR_THROWN,HAS_GP_VOL_Q1NP
+      my_real VOL_SUM_Q1NP
       INTEGER,INTENT(IN) :: NOD2ELTG(3*NUMELTG)
       INTEGER,INTENT(IN) :: NOD2ELQ(3*NUMELQ)
       INTEGER,INTENT(IN) :: NOD2ELS(3*NUMELS)
@@ -1061,55 +1068,11 @@ C        Calculate volume for replaced HEX8 elements by integration
            DO I=1,NUMELQ1NP_G
              IEL_HEX8 = KQ1NP_TAB(10, I)
              IF (IEL_HEX8 > 0 .AND. IEL_HEX8 <= NUMELS) THEN
-
-C              Check if this element is in the current group
-C              NFT is 0-based offset, so element indices are NFT+1 to NFT+NEL
                IF (IEL_HEX8 >= NFT+1 .AND. IEL_HEX8 <= NFT + NEL) THEN
                  IEL_LOCAL = IEL_HEX8 - NFT
                  IF (IEL_LOCAL > 0 .AND. IEL_LOCAL <= NEL) THEN
                    IF (ASSOCIATED(GBUF%OFF)) THEN
-                     GBUF%OFF(IEL_LOCAL) = ZERO
-                   ENDIF
-
-C                  Compute Q1NP element volume using enriched shape functions
-                   IF (ASSOCIATED(GBUF%VOL)) THEN
-                     IF (ASSOCIATED(Q1NP_KTAB_G) .AND. 
-     .                   Q1NP_NX_G > 0 .AND. Q1NP_NY_G > 0) THEN
-
-
-C                      I → IEL_Q1NP is the Q1NP element index
-C                      IEL_HEX8 → IEL_LOCAL is the original HEX8 element index
-C                      GBUF%VOL(IEL_LOCAL) is the volume of the original HEX8 element (modified here)
-C                      KQ1NP_TAB is the Q1NP element table
-C                         KQ1NP_TAB(1,*) = Material‑ID
-C                         KQ1NP_TAB(2,*) = Property‑ID
-C                         KQ1NP_TAB(3,*) = Anzahl Control Points NCTRL
-C                         KQ1NP_TAB(4,*) = Offset auf IQ1NP_TAB für die Konnektivität
-C                         KQ1NP_TAB(5,*) = Element‑ID (global)
-C                         KQ1NP_TAB(6,*) = ELEM_U (Index in u‑Richtung, 0‑basiert)
-C                         KQ1NP_TAB(7,*) = ELEM_V (Index in v‑Richtung, 0‑basiert)
-C                         KQ1NP_TAB(8,*) = NURBS‑Grad p
-C                         KQ1NP_TAB(9,*) = NURBS‑Grad q
-C                         KQ1NP_TAB(10,*) = IEL_HEX8 – zugehöriger ursprünglicher HEX8‑Index
-C                         KQ1NP_TAB(14,*) = Offset auf IQ1NP_BULK_TAB (Bottom‑Nodes).
-C                      IQ1NP_TAB is the Q1NP element control points connectivity table
-C                      IQ1NP_BULK_TAB is the Q1NP element bulk points table
-C                      Q1NP_KTAB_G is the global Q1NP element knot vectors
-C                         Q1NP_KTAB(1:NKNOT_U) = U-Knots
-C                         Q1NP_KTAB(NKNOT_U+1:NKNOT_U+NKNOT_V) = V-Knots
-C                      X is the node coordinates
-C                      Q1NP_NX_G is the number of knot vector points in the x direction
-C                      Q1NP_NY_G is the number of knot vector points in the y direction
-
-                       CALL Q1NP_COMPUTE_VOLUME_ELEMENT(I,
-     .                    KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
-     .                    Q1NP_KTAB_G, X, Q1NP_NX_G, Q1NP_NY_G,
-     .                    GBUF%VOL(IEL_LOCAL))
-                     ELSE
-                       GBUF%VOL(IEL_LOCAL) = ONE  ! Fallback if knot vectors not available
-                     ENDIF
-                  
-
+                     GBUF%OFF(IEL_LOCAL) = ONE
                    ENDIF
                  ENDIF
                ENDIF
@@ -1442,6 +1405,7 @@ C Case total strain: conf_ref <- XREF
             IF (NC8 == 1) NC8_OLD = 1
             IPARG(19,NG) = NC1_OLD*128+NC2_OLD*64+NC3_OLD*32+NC4_OLD*16+NC5_OLD*8+NC6_OLD*4+NC7_OLD*2+NC8
           ENDIF
+C
          ENDIF
         !----------------------------------------!
         !   ITY == 2                        QUAD !
@@ -2243,26 +2207,51 @@ C---------------------------------------------
 C     Q1Np enriched element mass calculation
 C---------------------------------------------
       IF (NUMELQ1NP_G > 0) THEN
-C       Global Q1NP volume computation
-        IF (ASSOCIATED(Q1NP_KTAB_G)) THEN
-          ALLOCATE(VOLU_Q1NP(NUMELQ1NP_G), STAT=STAT)
-          IF (STAT /= 0) THEN
-            CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,
-     .                  C1='VOLU_Q1NP')
-          ENDIF
-          VOLU_Q1NP(1:NUMELQ1NP_G) = ZERO
+C       Initialize per-Gauss-point Q1NP reference volumes in ELBUF/LBUF
+        X_Q1NP(1:3,1:NUMNOD) => X(1:3*NUMNOD)
+        KQ1NP_TAB_Q1NP(1:15,1:NUMELQ1NP_G) => KQ1NP_TAB(1:15,1:NUMELQ1NP_G)
+        IQ1NP_TAB_Q1NP(1:SIQ1NP_G) => IQ1NP_TAB(1:SIQ1NP_G)
+        IQ1NP_BULK_TAB_Q1NP(1:SQ1NPBULK_G) => IQ1NP_BULK_TAB(1:SQ1NPBULK_G)
+        CALL Q1NP_INIT_LBUF_GP_VOL(
+     .     IPARG, ELBUF_TAB, X_Q1NP, NUMELS,
+     .     KQ1NP_TAB_Q1NP, IQ1NP_TAB_Q1NP, IQ1NP_BULK_TAB_Q1NP)
 
-          DO IEL = 1, NUMELQ1NP_G
-            IEL_HEX8 = KQ1NP_TAB(10, IEL)
+C       Reconstruct scalar GBUF%VOL from per-Gauss Q1NP volumes.
+        IF (ASSOCIATED(Q1NP_KTAB_G) .AND. Q1NP_NX_G > 0 .AND. Q1NP_NY_G > 0) THEN
+          DO IEL_Q1NP = 1, NUMELQ1NP_G
+            IEL_HEX8 = KQ1NP_TAB(10, IEL_Q1NP)
             IF (IEL_HEX8 <= 0 .OR. IEL_HEX8 > NUMELS) CYCLE
 
-            CALL Q1NP_COMPUTE_VOLUME_ELEMENT(
-     .          IEL,
-     .          KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
-     .          Q1NP_KTAB_G, X, Q1NP_NX_G, Q1NP_NY_G,
-     .          VOLU_Q1NP(IEL))
-          END DO
-        END IF
+            DO NG = 1, NGROUP
+              IF (IPARG(5,NG) /= 1) CYCLE
+              NEL = IPARG(2,NG)
+              NFT = IPARG(3,NG)
+              IF (NEL <= 0) CYCLE
+              IF (IEL_HEX8 < NFT+1 .OR. IEL_HEX8 > NFT+NEL) CYCLE
+
+              IEL_LOCAL = IEL_HEX8 - NFT
+              GBUF => ELBUF_TAB(NG)%GBUF
+
+              NPTR_Q1NP = IPARG(56,NG)
+              NPTS_Q1NP = IPARG(57,NG)
+              NPTT_Q1NP = IPARG(58,NG)
+
+              VOL_SUM_Q1NP = ZERO
+              DO IT_Q1NP = 1, NPTT_Q1NP
+                DO IU_Q1NP = 1, NPTR_Q1NP
+                  DO IV_Q1NP = 1, NPTS_Q1NP
+                    VOL_SUM_Q1NP = VOL_SUM_Q1NP + ELBUF_TAB(NG)%BUFLY(1)%LBUF(
+     .                IU_Q1NP, IV_Q1NP, IT_Q1NP)%VOL(IEL_LOCAL)
+                  ENDDO
+                ENDDO
+              ENDDO
+
+              GBUF%VOL(IEL_LOCAL) = VOL_SUM_Q1NP
+              ! print *, 'Element ', IEL_Q1NP, ': Volume = ', GBUF%VOL(IEL_LOCAL)
+              EXIT
+            ENDDO
+          ENDDO
+        ENDIF
 
 C       Allocate temporary arrays for Q1Np mass calculation
         ALLOCATE(RHO_HEX8(NUMELS),STAT=STAT)
@@ -2334,12 +2323,9 @@ C       3.Step: Call Q1Np mass calculation routine
 C=======================================================================
         CALL Q1NP_MASS3(
      .     RHO_HEX8, MS, PARTSAV, X, V,
-     .     IPART, MSS, VOLU_HEX8,
-     .     IN,
-     .     VR, RHOF_HEX8, FRAC_HEX8, FILL,
-     .     KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
-     .     IXS, NUMELQ1NP_G, NPROPM, NUMMAT, PM,
-     .     NUMELS, NUMNOD, Q1NP_KTAB_G)
+     .     FILL, IPARG, ELBUF_TAB, KQ1NP_TAB, IQ1NP_TAB_Q1NP, IQ1NP_BULK_TAB_Q1NP,
+     .     NUMELQ1NP_G, NPROPM, NUMMAT, PM,
+     .     NUMELS, NUMNOD, NPART, Q1NP_KTAB_G)
 
 C=======================================================================
 C       4.Step: Deallocate temporary arrays

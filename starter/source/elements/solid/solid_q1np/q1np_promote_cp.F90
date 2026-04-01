@@ -38,8 +38,13 @@
           integer, intent(out)   :: numnod_cp_added
           integer, intent(inout) :: iq1np_tab(:)
           integer, intent(inout) :: kq1np_tab(:, :)
-          real(kind=WP), intent(inout) :: x(*), v(*), d(*), ms(*), in(*)
-          real(kind=WP), intent(inout) :: vr(*), dr(*)
+          real(kind=WP), intent(inout) :: x(:)
+          real(kind=WP), intent(inout) :: v(:) 
+          real(kind=WP), intent(inout) :: d(:)
+          real(kind=WP), intent(inout) :: ms(:)
+          real(kind=WP), intent(inout) :: in(:)
+          real(kind=WP), intent(inout) :: vr(:)
+          real(kind=WP), intent(inout) :: dr(:)
           real(kind=WP), intent(in)    :: q1np_cptab(:, :)
 !     Explicit sizes of nodal arrays (for debug / bounds checking)
           integer, intent(in) :: sx, sv, sd, sms, sin, svr, sdr
@@ -103,8 +108,8 @@
      &          '  Actual   sizes SX,SV,SD,SMS,SIN,SVR,SDR =', &
      &          sx, sv, sd, sms, sin, svr, sdr
             end if
-            call ancmsg(MSGID=402, MSGTYPE=MSGERROR, ANMODE=ANINFO, &
-     &        C1='Q1NP_PROMOTE_CP_TO_NODES: array bounds')
+            call ancmsg(MSGID=364, MSGTYPE=MSGERROR, ANMODE=ANINFO, &
+     &        C1='Q1NP control-point promotion array bounds')
             numnod_out      = numnod_in
             numnod_cp_added = 0
             return

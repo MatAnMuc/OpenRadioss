@@ -2,170 +2,248 @@
 !Chd|  Q1NP_MASS3                    source/elements/solid/solid_q1np/q1np_mass3.F90
 !Chd|====================================================================
 !=======================================================================
-!   Calculate lumped mass for Q1Np enriched elements
+!   Lumped mass for Q1NP enriched elements.
 !
-!   This routine distributes mass for Q1Np elements:
-!   - Total mass equals the underlying HEX8 element mass
-!   - 50% of mass distributed to 4 bulk nodes (12.5% each)
-!   - 50% of mass distributed equally to all control point nodes
-!   - HEX8 top nodes (nodes 5-8) explicitly set to zero mass
+!   m_K = rho * sum_gp( N_K(xi,eta,zeta) * det(J) * w_gp )
 !=======================================================================
       module q1np_mass3_mod
         use message_mod
         use q1np_restart_mod
+        use q1np_geom_mod
+        use elbufdef_mod
         use precision_mod, only : WP
-        use constant_mod,  only : ZERO, HALF, FOURTH, SIX
+        use constant_mod,  only : ZERO, ONE, HALF, FOURTH, SIX
         use element_mod   , only : NIXS
         implicit none
       contains
 !
         subroutine q1np_mass3( &
      &      rho, ms, partsav, x, v, &
-     &      ipart, mss, volu, &
-     &      in, &
-     &      vr, rhof, frac, fill, &
-     &      kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
-     &      ixs, numelq1np_in, npropm, nummat, pm, &
-     &      numels, numnod, q1np_ktab_g)
+     &      fill, iparg, elbuf_tab, kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
+     &      numelq1np_in, npropm, nummat, pm, &
+     &      numels, numnod, npart, q1np_ktab_g)
 !-----------------------------------------------------------------------
           implicit none
 !-----------------------------------------------------------------------
 !     Dummy arguments
 !-----------------------------------------------------------------------
           integer, intent(in) :: numelq1np_in
+          integer, intent(in) :: numels, numnod, npart
           integer, intent(in) :: npropm, nummat
-          integer, intent(in) :: kq1np_tab(15, *)
-          integer, intent(in) :: iq1np_tab(*)
-          integer, intent(in) :: iq1np_bulk_tab(*)
-          integer, intent(in) :: ixs(NIXS,*)
-          integer, intent(in) :: ipart(*)
-          real(kind=WP), intent(inout) :: ms(*), partsav(20,*)
-          real(kind=WP), intent(inout) :: x(3,*), v(3,*)
-          real(kind=WP), intent(inout) :: mss(8,*)
-          real(kind=WP), intent(inout) :: in(*), vr(3,*)
-          real(kind=WP), intent(in)    :: rho(*), volu(*), rhof(*), frac(*), fill(*)
+          integer, intent(in) :: iparg(:,:)
+          integer, intent(in) :: kq1np_tab(15, numelq1np_in)
+          integer, intent(in) :: iq1np_tab(:)
+          integer, intent(in) :: iq1np_bulk_tab(:)
+          real(kind=WP), intent(in)    :: rho(:) 
           real(kind=WP), intent(in)    :: pm(npropm, nummat)
-          integer, intent(in)          :: numels, numnod
-          real(kind=WP), intent(in)    :: q1np_ktab_g(*)
+          real(kind=WP), intent(in)    :: q1np_ktab_g(:)
+          type(ELBUF_STRUCT_), target, intent(in) :: elbuf_tab(:)
+
+          real(kind=WP), intent(in)    :: fill(numels)
+          real(kind=WP), intent(inout) :: ms(numnod)
+          real(kind=WP), intent(inout) :: partsav(20,npart)
+          real(kind=WP), intent(inout) :: x(3,numnod)
+          real(kind=WP), intent(inout) :: v(3,numnod)
+
 !-----------------------------------------------------------------------
 !     Local variables
 !-----------------------------------------------------------------------
-          integer :: iel, iel_hex8, ip
-          integer :: i, j, k, n_ctrl, offset_ctrl, offset_bulk
-          integer :: node_bulk(4), node_cp, node_hex8_top(4)
-          integer :: mid
-          real(kind=WP) :: mass_total, mass_bulk, mass_cp, mass_per_cp
-          real(kind=WP) :: mass_per_bulk
+          integer :: iel, iel_hex8, iel_local, ip, mid
+          integer :: i, k, iu, iv, it, ng, igrp
+          integer :: nel, nft
+          integer :: p, q_deg, nctrl, offset_ctrl, offset_bulk
+          integer :: elem_u, elem_v
+          integer :: nknot_u, nknot_v
+          integer :: n_top, n_total, nx, ny
+          integer :: node_id
+          real(kind=WP) :: rho_elem, fill_fac
+          real(kind=WP) :: xi, eta, zeta, vol_gp
           real(kind=WP) :: xx, yy, zz, xy, yz, zx
-          real(kind=WP) :: volu_q1np
-          integer, parameter :: IDEBUG_Q1NP = 0
+          real(kind=WP) :: mass_node_k, mass_total_el
+          real(kind=WP), allocatable :: nval(:), dn_local(:,:)
+          real(kind=WP), allocatable :: mass_node(:)
+          integer,       allocatable :: node_ids(:)
+          real(kind=WP), allocatable :: u_knot(:), v_knot(:)
 !=======================================================================
-!   Early return if no Q1Np elements
+!   Early return if no Q1NP elements
 !=======================================================================
           if (numelq1np_in == 0) return
+!
+          nx = q1np_nx_g
+          ny = q1np_ny_g
 !=======================================================================
-!   Loop over all Q1Np elements
+!   Initialize Gauss scheme if not yet done
+!=======================================================================
+          p     = kq1np_tab(8, 1)
+          q_deg = kq1np_tab(9, 1)
+          if (q1np_np_u_g <= 0 .or. q1np_np_v_g <= 0 .or. &
+     &        q1np_np_t_g <= 0) then
+            call q1np_init_gauss_scheme_starter(p + 1, q_deg + 1, 2)
+          end if
+!=======================================================================
+!   Extract knot vectors once (shared by all Q1NP elements on one grid)
+!=======================================================================
+          nknot_u = nx + 2*p + 1
+          nknot_v = ny + 2*q_deg + 1
+          allocate(u_knot(nknot_u))
+          allocate(v_knot(nknot_v))
+          call q1np_get_knot_vectors(nx, ny, p, q_deg, &
+     &                               q1np_ktab_g, u_knot, v_knot)
+!=======================================================================
+!   Loop over all Q1NP elements
 !=======================================================================
           do iel = 1, numelq1np_in
-!           Get original HEX8 element index
             iel_hex8 = kq1np_tab(10, iel)
             if (iel_hex8 <= 0 .or. iel_hex8 > numels) cycle
-!           Get material ID and part ID
+!
             mid = kq1np_tab(1, iel)
             ip  = kq1np_tab(11, iel)
             if (ip <= 0) cycle
-!           Use precomputed Q1NP/HEX8 volume from VOLU
-            volu_q1np = volu(iel_hex8)
-!           Optional debug: compare Q1NP volume with original HEX8 volume
-            if (IDEBUG_Q1NP >= 2) then
-              if (iel_hex8 > 0 .and. iel_hex8 <= numels) then
-                write(*,'(A,I6,A,I6,2(A,1P,E12.5))') &
-     &            'Q1NP MASS DBG: IEL_Q1NP=', iel, ' HEX8=', iel_hex8, &
-     &            ' VOL_HEX8(Q1NP)=', volu(iel_hex8), &
-     &            ' VOL_Q1NP_USED=', volu_q1np
-              else
-                write(*,'(A,I6,A,I6)') &
-     &            'Q1NP MASS DBG: IEL_Q1NP=', iel, ' HEX8=', iel_hex8
-              end if
-            end if
-!           Get density
-            if (mid > 0) then
-              mass_total = pm(1,mid) * volu_q1np
-              if (fill(iel_hex8) > ZERO) then
-                mass_total = fill(iel_hex8) * mass_total
-              end if
-            else
-              if (fill(iel_hex8) > ZERO) then
-                mass_total = fill(iel_hex8) * rho(iel_hex8) * volu_q1np
-              else
-                mass_total = rho(iel_hex8) * volu_q1np
-              end if
-            end if
-!           Distribute 50% to bulk nodes, 50% to control nodes
-            mass_bulk = HALF * mass_total
-            mass_cp   = HALF * mass_total
-!           Bulk nodes
-            offset_bulk = kq1np_tab(14, iel)
-            do i = 1, 4
-              node_bulk(i) = iq1np_bulk_tab(offset_bulk + i - 1)
-            end do
-            mass_per_bulk = mass_bulk * FOURTH
-            do i = 1, 4
-              if (node_bulk(i) > 0 .and. node_bulk(i) <= numnod) then
-                ms(node_bulk(i)) = ms(node_bulk(i)) + mass_per_bulk
-              end if
-            end do
-!           Control points
-            n_ctrl      = kq1np_tab(3, iel)
+!
+            p           = kq1np_tab(8, iel)
+            q_deg       = kq1np_tab(9, iel)
+            nctrl       = kq1np_tab(3, iel)
             offset_ctrl = kq1np_tab(4, iel)
-            if (n_ctrl > 0) then
-              mass_per_cp = mass_cp / real(n_ctrl, kind=WP)
-              do i = 1, n_ctrl
-                node_cp = iq1np_tab(offset_ctrl + i - 1)
-                if (node_cp > 0 .and. node_cp <= numnod) then
-                  ms(node_cp) = ms(node_cp) + mass_per_cp
-                end if
-              end do
+            offset_bulk = kq1np_tab(14,iel)
+            elem_u      = kq1np_tab(6, iel)
+            elem_v      = kq1np_tab(7, iel)
+!
+            n_top   = nctrl
+            n_total = n_top + 4
+!-----------------------------------------------------------------------
+!     Determine element density (rho * fill_factor)
+!-----------------------------------------------------------------------
+            if (mid > 0) then
+              rho_elem = pm(1, mid)
+            else
+              rho_elem = rho(iel_hex8)
             end if
-!           PARTSAV mass and inertia
-            partsav(1,ip) = partsav(1,ip) + mass_total
+            fill_fac = ONE
+            if (fill(iel_hex8) > ZERO) then
+              fill_fac = fill(iel_hex8)
+            end if
+            rho_elem = fill_fac * rho_elem
+!-----------------------------------------------------------------------
+!     Build node list: NCTRL control points, then 4 bulk nodes
+!-----------------------------------------------------------------------
+            allocate(node_ids(n_total))
+            allocate(nval(n_total))
+            allocate(dn_local(n_total, 3))
+            allocate(mass_node(n_total))
+!
+            do i = 1, nctrl
+              node_ids(i) = iq1np_tab(offset_ctrl + i - 1)
+            end do
             do i = 1, 4
-              if (node_bulk(i) > 0 .and. node_bulk(i) <= numnod) then
-                partsav(2,ip) = partsav(2,ip) + mass_per_bulk * x(1, node_bulk(i))
-                partsav(3,ip) = partsav(3,ip) + mass_per_bulk * x(2, node_bulk(i))
-                partsav(4,ip) = partsav(4,ip) + mass_per_bulk * x(3, node_bulk(i))
+              node_ids(n_top + i) = iq1np_bulk_tab(offset_bulk + i - 1)
+            end do
+!
+            ng = 0
+            do igrp = 1, size(elbuf_tab)
+              if (iparg(5,igrp) /= 1) cycle
+              nel = iparg(2,igrp)
+              nft = iparg(3,igrp)
+              if (iel_hex8 >= nft+1 .and. iel_hex8 <= nft+nel) then
+                ng = igrp
+                iel_local = iel_hex8 - nft
+                exit
               end if
             end do
-            do i = 1, n_ctrl
-              node_cp = iq1np_tab(offset_ctrl + i - 1)
-              if (node_cp > 0 .and. node_cp <= numnod) then
-                partsav(2,ip) = partsav(2,ip) + mass_per_cp * x(1, node_cp)
-                partsav(3,ip) = partsav(3,ip) + mass_per_cp * x(2, node_cp)
-                partsav(4,ip) = partsav(4,ip) + mass_per_cp * x(3, node_cp)
+            if (ng == 0) then
+              write(*,'(A,I8)') ' Q1NP ERROR: missing ELBUF group for Q1NP element ', iel
+              call ancmsg(msgid=364, msgtype=msgerror, anmode=aninfo, &
+     &          c1='Q1NP_MASS3 cannot map element to ELBUF group')
+              deallocate(node_ids, nval, dn_local, mass_node)
+              deallocate(u_knot, v_knot)
+              return
+            end if
+!-----------------------------------------------------------------------
+!     Gauss integration with precomputed GP volumes:
+!       m_K = rho * sum_gp( N_K * vol_gp )
+!-----------------------------------------------------------------------
+            mass_node = ZERO
+!
+            do it = 1, q1np_np_t_g
+              zeta = q1np_gp_t_g(it)
+              do iu = 1, q1np_np_u_g
+                xi = q1np_gp_u_g(iu)
+                do iv = 1, q1np_np_v_g
+                  eta = q1np_gp_v_g(iv)
+!
+                  call q1np_shape_functions(xi, eta, zeta, &
+     &                 p, q_deg, u_knot, v_knot, &
+     &                 elem_u, elem_v, nval, dn_local)
+!
+                  if (.not.associated(elbuf_tab(ng)%bufly(1)%lbuf(iu,iv,it)%vol)) then
+                    write(*,'(A,4I8)') ' Q1NP ERROR: missing LBUF volume pointer ng/iu/iv/it=', &
+     &                  ng, iu, iv, it
+                    call ancmsg(msgid=364, msgtype=msgerror, anmode=aninfo, &
+     &                c1='Q1NP_MASS3 missing LBUF volume pointer')
+                    deallocate(node_ids, nval, dn_local, mass_node)
+                    deallocate(u_knot, v_knot)
+                    return
+                  end if
+                  if (iel_local <= 0 .or. iel_local > size(elbuf_tab(ng)%bufly(1)%lbuf(iu,iv,it)%vol)) then
+                    write(*,'(A,2I8)') ' Q1NP ERROR: invalid LBUF volume index iel_local/ng=', &
+     &                  iel_local, ng
+                    call ancmsg(msgid=364, msgtype=msgerror, anmode=aninfo, &
+     &                c1='Q1NP_MASS3 invalid LBUF volume index')
+                    deallocate(node_ids, nval, dn_local, mass_node)
+                    deallocate(u_knot, v_knot)
+                    return
+                  end if
+                  vol_gp = elbuf_tab(ng)%bufly(1)%lbuf(iu,iv,it)%vol(iel_local)
+!
+                  do k = 1, n_total
+                    mass_node(k) = mass_node(k) + nval(k) * vol_gp
+                  end do
+                end do
+              end do
+            end do
+!
+            do k = 1, n_total
+              mass_node(k) = rho_elem * mass_node(k)
+            end do
+!-----------------------------------------------------------------------
+!     Assemble nodal mass into global MS array
+!-----------------------------------------------------------------------
+            do k = 1, n_total
+              node_id = node_ids(k)
+              if (node_id > 0 .and. node_id <= numnod) then
+                ms(node_id) = ms(node_id) + mass_node(k)
               end if
             end do
-!           Inertia (simplified)
+!-----------------------------------------------------------------------
+!     PARTSAV statistics per-node masses
+!-----------------------------------------------------------------------
+            mass_total_el = ZERO
+            do k = 1, n_total
+              mass_total_el = mass_total_el + mass_node(k)
+            end do
+            partsav(1,ip) = partsav(1,ip) + mass_total_el
+!
+            do k = 1, n_total
+              node_id = node_ids(k)
+              if (node_id > 0 .and. node_id <= numnod) then
+                mass_node_k = mass_node(k)
+                partsav(2,ip)  = partsav(2,ip)  + mass_node_k * x(1, node_id)
+                partsav(3,ip)  = partsav(3,ip)  + mass_node_k * x(2, node_id)
+                partsav(4,ip)  = partsav(4,ip)  + mass_node_k * x(3, node_id)
+              end if
+            end do
+!
             xx = ZERO; yy = ZERO; zz = ZERO
             xy = ZERO; yz = ZERO; zx = ZERO
-            do i = 1, 4
-              if (node_bulk(i) > 0 .and. node_bulk(i) <= numnod) then
-                xx = xx + mass_per_bulk * x(1, node_bulk(i)) * x(1, node_bulk(i))
-                yy = yy + mass_per_bulk * x(2, node_bulk(i)) * x(2, node_bulk(i))
-                zz = zz + mass_per_bulk * x(3, node_bulk(i)) * x(3, node_bulk(i))
-                xy = xy + mass_per_bulk * x(1, node_bulk(i)) * x(2, node_bulk(i))
-                yz = yz + mass_per_bulk * x(2, node_bulk(i)) * x(3, node_bulk(i))
-                zx = zx + mass_per_bulk * x(3, node_bulk(i)) * x(1, node_bulk(i))
-              end if
-            end do
-            do i = 1, n_ctrl
-              node_cp = iq1np_tab(offset_ctrl + i - 1)
-              if (node_cp > 0 .and. node_cp <= numnod) then
-                xx = xx + mass_per_cp * x(1, node_cp) * x(1, node_cp)
-                yy = yy + mass_per_cp * x(2, node_cp) * x(2, node_cp)
-                zz = zz + mass_per_cp * x(3, node_cp) * x(3, node_cp)
-                xy = xy + mass_per_cp * x(1, node_cp) * x(2, node_cp)
-                yz = yz + mass_per_cp * x(2, node_cp) * x(3, node_cp)
-                zx = zx + mass_per_cp * x(3, node_cp) * x(1, node_cp)
+            do k = 1, n_total
+              node_id = node_ids(k)
+              if (node_id > 0 .and. node_id <= numnod) then
+                mass_node_k = mass_node(k)
+                xx = xx + mass_node_k * x(1, node_id) * x(1, node_id)
+                yy = yy + mass_node_k * x(2, node_id) * x(2, node_id)
+                zz = zz + mass_node_k * x(3, node_id) * x(3, node_id)
+                xy = xy + mass_node_k * x(1, node_id) * x(2, node_id)
+                yz = yz + mass_node_k * x(2, node_id) * x(3, node_id)
+                zx = zx + mass_node_k * x(3, node_id) * x(1, node_id)
               end if
             end do
             partsav(5,ip)  = partsav(5,ip)  + (yy + zz)
@@ -174,43 +252,26 @@
             partsav(8,ip)  = partsav(8,ip)  - xy
             partsav(9,ip)  = partsav(9,ip)  - yz
             partsav(10,ip) = partsav(10,ip) - zx
-!           Momentum
-            do i = 1, 4
-              if (node_bulk(i) > 0 .and. node_bulk(i) <= numnod) then
-                partsav(11,ip) = partsav(11,ip) + mass_per_bulk * v(1, node_bulk(i))
-                partsav(12,ip) = partsav(12,ip) + mass_per_bulk * v(2, node_bulk(i))
-                partsav(13,ip) = partsav(13,ip) + mass_per_bulk * v(3, node_bulk(i))
+!
+            do k = 1, n_total
+              node_id = node_ids(k)
+              if (node_id > 0 .and. node_id <= numnod) then
+                mass_node_k = mass_node(k)
+                partsav(11,ip) = partsav(11,ip) + mass_node_k * v(1, node_id)
+                partsav(12,ip) = partsav(12,ip) + mass_node_k * v(2, node_id)
+                partsav(13,ip) = partsav(13,ip) + mass_node_k * v(3, node_id)
+                partsav(14,ip) = partsav(14,ip) + HALF * mass_node_k * &
+     &            ( v(1,node_id)*v(1,node_id) + &
+     &              v(2,node_id)*v(2,node_id) + &
+     &              v(3,node_id)*v(3,node_id) )
               end if
             end do
-            do i = 1, n_ctrl
-              node_cp = iq1np_tab(offset_ctrl + i - 1)
-              if (node_cp > 0 .and. node_cp <= numnod) then
-                partsav(11,ip) = partsav(11,ip) + mass_per_cp * v(1, node_cp)
-                partsav(12,ip) = partsav(12,ip) + mass_per_cp * v(2, node_cp)
-                partsav(13,ip) = partsav(13,ip) + mass_per_cp * v(3, node_cp)
-              end if
-            end do
-!           Kinetic energy
-            do i = 1, 4
-              if (node_bulk(i) > 0 .and. node_bulk(i) <= numnod) then
-                partsav(14,ip) = partsav(14,ip) + HALF * mass_per_bulk * &
-     &            ( v(1,node_bulk(i))*v(1,node_bulk(i)) + &
-     &              v(2,node_bulk(i))*v(2,node_bulk(i)) + &
-     &              v(3,node_bulk(i))*v(3,node_bulk(i)) )
-              end if
-            end do
-            do i = 1, n_ctrl
-              node_cp = iq1np_tab(offset_ctrl + i - 1)
-              if (node_cp > 0 .and. node_cp <= numnod) then
-                partsav(14,ip) = partsav(14,ip) + HALF * mass_per_cp * &
-     &            ( v(1,node_cp)*v(1,node_cp) + &
-     &              v(2,node_cp)*v(2,node_cp) + &
-     &              v(3,node_cp)*v(3,node_cp) )
-              end if
-            end do
+!
+            deallocate(node_ids, nval, dn_local, mass_node)
           end do
+!
+          deallocate(u_knot, v_knot)
           return
         end subroutine q1np_mass3
 !
       end module q1np_mass3_mod
-
