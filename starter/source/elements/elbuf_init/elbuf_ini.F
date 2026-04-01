@@ -229,7 +229,7 @@ c----
 c if xfem, count buffer's length only in the groups with xfem phantom elements  
 cc        IF (ICRACK3D > 0 .AND. IXFEM == 0) CYCLE
 c----
-                                                      
+         IS_Q1NP_GROUP = .FALSE.                                 
          IF (DEBUG_PRINT == 1) THEN
             print*,'**** GROUP,ITY,IGTYP,MLW=',ng,ity,igtyp,mlw
             print*,'     NPAR_TAB,NPAR_LAY,NPAR_LBUF=',NPAR_TAB,NPAR_LAY,NPAR_LBUF
@@ -260,7 +260,6 @@ c
 c=======================================================================
 
 C Check if this is a Q1NP group
-          IS_Q1NP_GROUP = .FALSE.
           IF (ITY == 1) THEN
             NFT = IPARG(3,NG)
             IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN
@@ -289,7 +288,7 @@ C Check if this is a Q1NP group
             NPTT = IPARG(58,NG)
             NPG = NPTR * NPTS * NPTT
           ENDIF
-            
+
           TSHELL  = 0
           TSH_ORT = 0
           IF (IGTYP==20 .OR. IGTYP==21 .OR. IGTYP==22 .or. 
@@ -301,9 +300,9 @@ c---------ELEMENT PROPERTY
             NLAY = 1
           ELSEIF (NPT == 1) THEN
             IF (.NOT. IS_Q1NP_GROUP) THEN
-              NPTR  = 1                           
-              NPTS  = 1                          
-              NPTT  = 1 
+            NPTR  = 1                           
+            NPTS  = 1                          
+            NPTT  = 1 
             ENDIF
             IF (JMULT > 0) THEN   ! multimateriau 
               NLAY = 2
@@ -1602,9 +1601,9 @@ c
 c                LVISC = LVISC + NUVARV*NEL                                         
                 DO J = 1,NFAIL                                                     
                   FLOC=>ELBUF_TAB(NG)%INTLAY(IL)%FAIL(IR,IS)%FLOC(J)           
-                  FLOC%ILAWF   = MAT_PARAM(IMAT(IL))%FAIL(J)%IRUPT 
-                  FLOC%IDFAIL  = MAT_PARAM(IMAT(IL))%FAIL(J)%FAIL_ID                                              
-                  FLOC%NVAR    = MAT_PARAM(IMAT(IL))%FAIL(J)%NUVAR                             
+                  FLOC%ILAWF = MAT_PARAM(IMAT(IL))%FAIL(J)%IRUPT 
+                  FLOC%IDFAIL = MAT_PARAM(IMAT(IL))%FAIL(J)%FAIL_ID                                              
+                  FLOC%NVAR  = MAT_PARAM(IMAT(IL))%FAIL(J)%NUVAR                             
                   NVARTMP      = MAT_PARAM(IMAT(IL))%FAIL(J)%NVARTMP                             
                   CALL MY_ALLOC(FLOC%VAR,FLOC%NVAR*NEL)
                   CALL MY_ALLOC(FLOC%VARTMP,NVARTMP*NEL)

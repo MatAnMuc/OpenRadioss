@@ -21,7 +21,7 @@
      &      rho, ms, partsav, x, v, &
      &      fill, iparg, elbuf_tab, kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
      &      numelq1np_in, npropm, nummat, pm, &
-     &      numels, numnod, npart, q1np_ktab_g)
+     &      numels, numnod, npart, q1np_ktab_g,sfill)
 !-----------------------------------------------------------------------
           implicit none
 !-----------------------------------------------------------------------
@@ -32,14 +32,15 @@
           integer, intent(in) :: npropm, nummat
           integer, intent(in) :: iparg(:,:)
           integer, intent(in) :: kq1np_tab(15, numelq1np_in)
-          integer, intent(in) :: iq1np_tab(:)
-          integer, intent(in) :: iq1np_bulk_tab(:)
+          integer, intent(in) :: iq1np_tab(siq1np_g)
+          integer, intent(in) :: iq1np_bulk_tab(sq1npbulk_g)
+          integer, intent(in) :: sfill
           real(kind=WP), intent(in)    :: rho(:) 
           real(kind=WP), intent(in)    :: pm(npropm, nummat)
           real(kind=WP), intent(in)    :: q1np_ktab_g(:)
           type(ELBUF_STRUCT_), target, intent(in) :: elbuf_tab(:)
 
-          real(kind=WP), intent(in)    :: fill(numels)
+          real(kind=WP), intent(in)    :: fill(sfill)
           real(kind=WP), intent(inout) :: ms(numnod)
           real(kind=WP), intent(inout) :: partsav(20,npart)
           real(kind=WP), intent(inout) :: x(3,numnod)
@@ -115,14 +116,16 @@
 !-----------------------------------------------------------------------
             if (mid > 0) then
               rho_elem = pm(1, mid)
-            else
+              else
               rho_elem = rho(iel_hex8)
-            end if
-            fill_fac = ONE
-            if (fill(iel_hex8) > ZERO) then
-              fill_fac = fill(iel_hex8)
-            end if
-            rho_elem = fill_fac * rho_elem
+              end if
+              fill_fac = ONE
+              if (sfill > 0) then
+                if (fill(iel_hex8) > ZERO) then
+                  fill_fac = fill(iel_hex8)
+                end if
+              endif 
+              rho_elem = fill_fac * rho_elem
 !-----------------------------------------------------------------------
 !     Build node list: NCTRL control points, then 4 bulk nodes
 !-----------------------------------------------------------------------
@@ -147,8 +150,8 @@
                 ng = igrp
                 iel_local = iel_hex8 - nft
                 exit
-              end if
-            end do
+                end if
+              end do
             if (ng == 0) then
               write(*,'(A,I8)') ' Q1NP ERROR: missing ELBUF group for Q1NP element ', iel
               call ancmsg(msgid=364, msgtype=msgerror, anmode=aninfo, &
@@ -182,7 +185,7 @@
                     deallocate(node_ids, nval, dn_local, mass_node)
                     deallocate(u_knot, v_knot)
                     return
-                  end if
+              end if
                   if (iel_local <= 0 .or. iel_local > size(elbuf_tab(ng)%bufly(1)%lbuf(iu,iv,it)%vol)) then
                     write(*,'(A,2I8)') ' Q1NP ERROR: invalid LBUF volume index iel_local/ng=', &
      &                  iel_local, ng
@@ -196,7 +199,7 @@
 !
                   do k = 1, n_total
                     mass_node(k) = mass_node(k) + nval(k) * vol_gp
-                  end do
+            end do
                 end do
               end do
             end do
@@ -268,7 +271,7 @@
             end do
 !
             deallocate(node_ids, nval, dn_local, mass_node)
-          end do
+            end do
 !
           deallocate(u_knot, v_knot)
           return

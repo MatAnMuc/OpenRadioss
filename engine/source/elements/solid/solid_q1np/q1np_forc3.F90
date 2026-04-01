@@ -116,8 +116,8 @@
   !-----------------------------------------------
   !   G l o b a l   P a r a m e t e r s
   !-----------------------------------------------
-  #include      "mvsiz_p.inc"
-  #include      "my_real.inc"
+#include      "mvsiz_p.inc"
+#include      "my_real.inc"
   !-----------------------------------------------
   !   D u m m y   A r g u m e n t s
   !-----------------------------------------------
@@ -148,13 +148,13 @@
       INTEGER,            INTENT(INOUT) :: NELTST, ITYPTST
       INTEGER,            INTENT(IN)    :: OFFSET, IPRI
       INTEGER,            INTENT(INOUT) :: IDEL7NOK
-      INTEGER,            INTENT(IN)    :: NPF(:)
+      INTEGER,            INTENT(IN)    :: NPF(SNPC)
       INTEGER,            INTENT(IN)    :: IPARTS(*) !SIZE NEL?
       INTEGER,            INTENT(IN)    :: IPM(NPROPMI,NUMMAT)
       INTEGER,            INTENT(IN)    :: IXS(NIXS,NUMELS)
       INTEGER,            INTENT(IN)    :: IPARG(NPARG,NGROUP)
       INTEGER,            INTENT(IN)    :: IGEO(NPROPGI,NUMGEO)
-      INTEGER,            INTENT(INOUT) :: IGRTH(:)
+      INTEGER,            INTENT(INOUT) :: IGRTH(*)
       my_real,            INTENT(INOUT) :: PM(NPROPM,NUMMAT)
       my_real,            INTENT(INOUT) :: GEO(NPROPG,NUMGEO)
       my_real,            INTENT(IN)    :: X(3,NUMNOD)
@@ -162,16 +162,16 @@
       my_real,            INTENT(INOUT) :: V(3,NUMNOD)
       my_real,            INTENT(IN)    :: W(3,NUMNOD)
       my_real,            INTENT(INOUT) :: STIFN(NUMNOD)
-      my_real,            INTENT(INOUT) :: TF(:)
-      my_real,            INTENT(INOUT) :: BUFMAT(:)
+      my_real,            INTENT(INOUT) :: TF(STF)
+      my_real,            INTENT(INOUT) :: BUFMAT(SBUFMAT)
       my_real,            INTENT(INOUT) :: FV(*) !SIZE MAXFUNC?
-      my_real,            INTENT(INOUT) :: PARTSAV(20,NPART)
-      my_real,            INTENT(INOUT) :: GRESAV(:)
-      my_real,            INTENT(INOUT) :: GRTH(:)
+      my_real,            INTENT(INOUT) :: PARTSAV(NPSAV,NPART)
+      my_real,            INTENT(INOUT) :: GRESAV(*)
+      my_real,            INTENT(INOUT) :: GRTH(*)
       my_real,            INTENT(INOUT) :: DT2T
-      my_real,            INTENT(INOUT) :: MSSA(:)
-      my_real,            INTENT(INOUT) :: DMELS(:)
-      TYPE(TTABLE),       INTENT(INOUT) :: TABLE(:)
+      my_real,            INTENT(INOUT) :: MSSA(*)
+      my_real,            INTENT(INOUT) :: DMELS(*)
+      TYPE(TTABLE),       INTENT(INOUT) :: TABLE(*)
       TYPE(MAT_ELEM_),    INTENT(INOUT) :: MAT_ELEM
       TYPE(NLOCAL_STR_),  INTENT(INOUT) :: NLOC_DMG
       TYPE(t_ale_connectivity), INTENT(IN) :: ALE_CONNECT
@@ -225,12 +225,11 @@
       my_real :: GAMA(MVSIZ,6), FR_WAV(MVSIZ), TEMPEL(MVSIZ), DIE(MVSIZ)
       my_real :: VARNL(MVSIZ), CONDE(MVSIZ)
       my_real :: FVD2(MVSIZ), FDELTAX(MVSIZ), FSSP(MVSIZ), FQVIS(MVSIZ)
+      my_real :: FHEAT(MVSIZ)
       DOUBLE PRECISION :: VOLDP(MVSIZ)
       my_real :: DUMMY_FLUX(1,1)
       my_real :: DTFAC1(102), DTMIN1(102), PERCENT_ADDMASS
       my_real :: DT_STOP_PERCENT_ADDMASS, MASS0_START, PERCENT_ADDMASS_OLD
-      COMMON /SCR18R/ DTFAC1, DTMIN1, PERCENT_ADDMASS, &
-     &                DT_STOP_PERCENT_ADDMASS, MASS0_START, PERCENT_ADDMASS_OLD
   !-----------------------------------------------
   !   VECT01 common block re-declaration
   !-----------------------------------------------
@@ -243,7 +242,7 @@
      &           V01_ISRAT, V01_ISROT, V01_ICSEN, V01_IFAILURE,      &
      &           V01_JSMS, V01_ISPH2SOL, V01_IPARTSPH, V01_IGRE,     &
      &           V01_IFORMDT
-      COMMON /VECT01/ V01_LFT, V01_LLT, V01_NFT, V01_MTN, V01_IAD,  &
+      COMMON /VECT11/ V01_LFT, V01_LLT, V01_NFT, V01_MTN, V01_IAD,  &
      &                V01_ITY, V01_NPT, V01_JALE, V01_ISMSTR,        &
      &                V01_JEUL, V01_JTUR, V01_JTHE, V01_JLAG,        &
      &                V01_JMULT, V01_JHBE, V01_JIVF, V01_NVAUX,      &
@@ -683,7 +682,7 @@
               END DO
             END IF
 
-            CALL Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, NVAL(1:NNODE_LOCAL), DN_GLOBAL(1:NNODE_LOCAL,1:3), DETJ_LOCAL)
+            CALL Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, DN_GLOBAL(1:NNODE_LOCAL,1:3))
           END DO
 
           CALL Q1NP_EVAL_DEF()
@@ -724,7 +723,7 @@
      &                 SNPC, STF, SBUFMAT, GLOB_THERM, SVIS, SZ_IX, IRESP, 0, TH_STRAIN, &
      &                 NGROUP, TT, DT1, NTABLE, NUMELQ, NUMMAT, NUMGEO, NUMNOD, NUMELS, &
      &                 IDEL7NOK, IDTMIN, MAXFUNC, IMON_MAT, USERL_AVAIL, IMPL_S, IDYNA, DT, &
-     &                 FV, SENSORS)
+     &                 FHEAT, SENSORS)
 
           ! strain history update routine. Used to store the small-strain tensor
           ! Update LBUF%STRA (stored strain components) from current deformation-rate terms
@@ -734,9 +733,9 @@
 !=======================================================================
 ! Fill the element-local material basis matrix
 !=======================================================================
-        SUBROUTINE Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, R_LOCAL, DRDX_LOCAL, DETJ_LOCAL)
+        SUBROUTINE Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, DRDX_LOCAL) 
           INTEGER, INTENT(IN) :: IEL_LOCAL, NNODE_LOCAL
-          my_real, INTENT(IN) :: R_LOCAL(NNODE_LOCAL), DRDX_LOCAL(NNODE_LOCAL,3), DETJ_LOCAL
+          my_real, INTENT(IN) :: DRDX_LOCAL(NNODE_LOCAL,3)
           INTEGER :: K_LOCAL, IAD_LOCAL
 
           DO K_LOCAL = 1, NNODE_LOCAL
@@ -961,8 +960,8 @@
           END DO
 
           IF (CAN_BILAN_LOCAL .AND. IPRI > 0) THEN
-            ALLOCATE(VX_BAL(NCTRL_ELEM(1) + 4,NEL), VY_BAL(NCTRL_ELEM(1) + 4,NEL), VZ_BAL(NCTRL_ELEM(1) + 4,NEL))
-            ALLOCATE(XX_BAL(NCTRL_ELEM(1) + 4,NEL), YY_BAL(NCTRL_ELEM(1) + 4,NEL), ZZ_BAL(NCTRL_ELEM(1) + 4,NEL))
+            ALLOCATE(VX_BAL(NCTRL_ELEM(1) + 4,MVSIZ), VY_BAL(NCTRL_ELEM(1) + 4,MVSIZ), VZ_BAL(NCTRL_ELEM(1) + 4,MVSIZ))
+            ALLOCATE(XX_BAL(NCTRL_ELEM(1) + 4,MVSIZ), YY_BAL(NCTRL_ELEM(1) + 4,MVSIZ), ZZ_BAL(NCTRL_ELEM(1) + 4,MVSIZ))
 
             DO IEL_LOCAL = 1, NEL
               DO K_LOCAL = 1, NCTRL_ELEM(IEL_LOCAL) + 4

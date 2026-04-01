@@ -21,18 +21,18 @@ Copyright>        As an alternative to this open-source version, Altair also off
 Copyright>        software under a commercial license.  Contact Altair to discuss further if the
 Copyright>        commercial version may interest you: https://www.altair.com/radioss/.
 !||====================================================================
-!||    sgrhead                  ../starter/source/elements/solid/solide/sgrhead.F
+!||    sgrhead                ../starter/source/elements/solid/solide/sgrhead.F
 !||--- called by ------------------------------------------------------
-!||    lectur                   ../starter/source/starter/lectur.F
+!||    lectur                 ../starter/source/starter/lectur.F
 !||--- calls      -----------------------------------------------------
-!||    ancmsg                   ../starter/source/output/message/message.F
+!||    ancmsg                 ../starter/source/output/message/message.F
 !||    get_sort_key_solid       ../starter/source/elements/solid/get_sort_key_solid.F90
 !||--- uses       -----------------------------------------------------
-!||    cluster_mod              ../starter/share/modules1/cluster_mod.F
+!||    cluster_mod            ../starter/share/modules1/cluster_mod.F
 !||    get_sort_key_solid_mod   ../starter/source/elements/solid/get_sort_key_solid.F90
-!||    message_mod              ../starter/share/message_module/message_mod.F
-!||    r2r_mod                  ../starter/share/modules1/r2r_mod.F
-!||    reorder_mod              ../starter/share/modules1/reorder_mod.F
+!||    message_mod            ../starter/share/message_module/message_mod.F
+!||    r2r_mod                ../starter/share/modules1/r2r_mod.F
+!||    reorder_mod            ../starter/share/modules1/reorder_mod.F
 !||====================================================================
       SUBROUTINE SGRHEAD(
      1       IXS        ,PM            ,GEO       ,INUM    ,
@@ -55,7 +55,7 @@ C     INUM(13,NUMELS)      ARRAY: WORKING                            E/S
 C     ITR1(NSELS)          ARRAY: WORKING                            E/S
 C     EADD(NUMELS)         ARRAY: IDAM INDEXES / checkboard            S
 C     INDEX(NUMELS)        ARRAY: WORKING                            E/S
-C     ITRI(8,NUMELS)       ARRAY: WORKING                            E/S
+C     ITRI(9,NUMELS)       ARRAY: WORKING                            E/S
 C     IPARTS(NUMELS)       ARRAY: PART                               E/S
 C     CEP(NUMELS)          ARRAY: WORKING                            E/S
 C     XEP(NUMELS)          ARRAY: WORKING                            E/S
@@ -148,12 +148,12 @@ C
         ALLOCATE(XNUM_RNOISE(NPERTURB,0),STAT=stat)
       ENDIF
 C
-      IF (IDEBUG_Q1NP_SORT > 0) THEN
-        WRITE(*,*) ''
-        WRITE(*,*) '=============================================='
-        WRITE(*,*) 'SGRHEAD: Checking Q1NP elements'
-        WRITE(*,*) '=============================================='
-      ENDIF
+        IF (IDEBUG_Q1NP_SORT > 0) THEN
+          WRITE(*,*) ''
+          WRITE(*,*) '=============================================='
+          WRITE(*,*) 'SGRHEAD: Checking Q1NP elements'
+          WRITE(*,*) '=============================================='
+        ENDIF
       DO I=1,NUMELS
         INDEX2(I)=PERMUTATION%SOLID(I)
         EADD(I)=1
@@ -200,7 +200,7 @@ C
      .                                 itri,ixs,igeo, 
      .                                 ipm,pm,geo, 
      .                                 mat_param)
-      DO I=1,NUMELS
+      DO I = 1, NUMELS 
 Clef 9---------------------------------
 C       Q1NP element flag ITRI(9)
         IS_Q1NP = 0

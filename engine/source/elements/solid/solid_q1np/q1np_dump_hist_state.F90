@@ -31,7 +31,7 @@
 !||====================================================================
 ! Dump Q1NP bulk and control-point node coordinates to CSV (debug / post-processing).
 !=======================================================================
-      SUBROUTINE Q1NP_DUMP_HIST_STATE(TIME_CUR, X, ITAB)
+      SUBROUTINE Q1NP_DUMP_HIST_STATE(TIME_CUR, X)
 !-----------------------------------------------------------------------
 !   Dump Q1NP bulk and control-point node coordinates to CSV files.
 !   Only used for post-processing and debugging.
@@ -42,7 +42,6 @@
 !
 !   TIME_CUR : current physical time
 !   X        : current nodal coordinates, dimension (3,*)
-!   ITAB     : nodal IDs for local indices (global IDs)
 !-----------------------------------------------------------------------
       USE Q1NP_RESTART_MOD
       USE RESTMOD, ONLY: IQ1NP_TAB, IQ1NP_BULK_TAB, KQ1NP_TAB
@@ -53,7 +52,6 @@
 #include      "my_real.inc"
       my_real, INTENT(IN) :: TIME_CUR
       my_real, INTENT(IN) :: X(3,*)
-      INTEGER, INTENT(IN) :: ITAB(*)
 
       INTEGER :: LUX_BULK
       INTEGER :: LUX_CP

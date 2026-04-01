@@ -773,7 +773,7 @@ C-----------------------------------------------
               use resol_alloc_mod
               use init_ale_mod , only : init_ale
               use sfem_mod
-              use init_global_boundary_list_mod , only : init_global_boundary_list
+              use init_global_boundary_list_mod , only : init_global_boundary_list 
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -1413,28 +1413,31 @@ C-----------------------------------------------
           SOLID_ELEMENT_MAT(i, :) = IXS((i - 1) * 11 + 1 : i * 11)
           print '(F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, 
      &          F8.0, F8.0, F10.0)', SOLID_ELEMENT_MAT(i, :)
-      end do    
+      end do  
 
 C-----------------------------------------------
 C Interface Type and Secondary Nodes Information
 C-----------------------------------------------
       write(*,*) 
-      write(*,*) "Type of interface:", IPARI(7,1)     
+      IF (NINTER > 0) THEN
+        write(*,*) "Type of interface:", IPARI(7,1)     
+      ENDIF
       
       print *, ''
       print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
       DO I = 1, NINTER
-          print *, INTERFACES%INTBUF_TAB(I)%NSV
+        print *, INTERFACES%INTBUF_TAB(I)%NSV
       ENDDO
 
 C-----------------------------------------------
 C Process PRIMARY Surface (Master Surface for STS)
 C-----------------------------------------------
       write(*,*)
-      print *, "Internal ID of the selected group of PRIMARY nodes 
-     &         (for STS):", IPARI(46,1)
-      
-      IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
+c      print *, "Internal ID of the selected group of PRIMARY nodes 
+c     &         (for STS):", IPARI(46,1)
+
+      IF (NINTER > 0) THEN      
+        IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
      .    IPARI(46,1) <= NSURF) THEN
           print '(A, 1X, A15)', 'Title:', IGRSURF(IPARI(46,1))%TITLE
           print '(A, 1X, I4)', 'Number of Segments:', 
@@ -1449,9 +1452,10 @@ C-----------------------------------------------
               PRIMARY_SEG_MAT(i, 2:5) = IGRSURF(IPARI(46,1))%NODES(i, 1:4)
               print '(F8.0, F8.0, F8.0, F8.0, F8.0)', PRIMARY_SEG_MAT(i, :)
           end do
-      ELSE
+        ELSE
           print *, "STS interface not active or invalid primary surface ID"
-      ENDIF  
+        ENDIF  
+      ENDIF
 
 C-----------------------------------------------
 C Process SECONDARY Surface (Slave Surface for STS)
@@ -1492,7 +1496,7 @@ C           Create temporary IRECTS array from secondary surface nodes
             CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, 
      &                             NODES%ITAB)
 C           Remove duplicate nodes from NSV array
-            CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB)
+            CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB,IPARI)
 C           Debug output: Print surface and interface data
 C            CALL WRITE_IGRSURF(INTERFACES%INTBUF_TAB, IGRSURF, 
 C     &                        NODES%ITAB)
@@ -1502,7 +1506,9 @@ C     &                        NODES%ITAB)
       
       write(*,*)
       write(*,*) "Unique SECONDARY NODES for the search algorithm"
-      write(*,*) INTERFACES%INTBUF_TAB(1)%NSV
+      DO I=1,NINTER
+        write(*,*) INTERFACES%INTBUF_TAB(I)%NSV
+      ENDDO 
       write(*,*)
       
       !SurfaceIDs
@@ -10051,7 +10057,7 @@ C   Creates a unique list of secondary nodes for contact search algorithm.
 C   The algorithm uses a mask-based approach to identify duplicates and
 C   extracts only unique node IDs into INTBUF_TAB%NSV.
 C
-      SUBROUTINE REMOVE_DUPLI(INTBUF_TAB)
+      SUBROUTINE REMOVE_DUPLI(INTBUF_TAB,IPARI)
 C-----------------------------------------------
 C   M o d u l e s
 C----------------------------------------------- 
@@ -10069,6 +10075,7 @@ C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
+      INTEGER IPARI(NPARI,NINTER)
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
@@ -10163,9 +10170,10 @@ C     Update NSV array with unique nodes
 C         Deallocate existing NSV if present
           IF (ALLOCATED(INTBUF_TAB(1)%NSV)) THEN
               DEALLOCATE(INTBUF_TAB(1)%NSV)
-          ENDIF
+          ENDIF    
           
           INTBUF_TAB(1)%S_NSV = n
+          IPARI(5,1) = n
           ALLOCATE(INTBUF_TAB(1)%NSV(INTBUF_TAB(1)%S_NSV))
           INTBUF_TAB(1)%NSV(1:n) = unique_arr(1:n)
           
