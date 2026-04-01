@@ -26,8 +26,8 @@
 !C=======================================================================
 !C   Volume computation for Q1NP enriched elements
 !C
-!C   This module implements numerical volume integration for Q1NP elements
-!C   using Gauss quadrature over enriched shape functions (NURBS top +
+!C   This module implements 3D Gauss volume integration for Q1NP elements
+!C   over (u, v, t) using enriched element shape functions (NURBS top + Bulk)
       module q1np_volume_mod
         use message_mod
         use q1np_restart_mod
@@ -43,22 +43,26 @@
         subroutine q1np_compute_volume_element(iel_q1np, &
      &                                         kq1np_tab, iq1np_tab, &
      &                                         iq1np_bulk_tab, q1np_ktab, &
-     &                                         x, nx, ny, vol_el)
+     &                                         x, nx, ny, vol_el, &
+     &                                         detj_min_out, &
+     &                                         q1np_cptab_opt)
 !C-----------------------------------------------
 !C   D u m m y   A r g u m e n t s
 !C-----------------------------------------------
           integer,      intent(in)  :: iel_q1np, nx, ny
-          integer,      intent(in)  :: kq1np_tab(15,*), iq1np_tab(*)
-          integer,      intent(in)  :: iq1np_bulk_tab(*)
-          real(kind=WP),intent(in)  :: q1np_ktab(*), x(3,*)
+          integer,      intent(in)  :: kq1np_tab(:,:), iq1np_tab(:)
+          integer,      intent(in)  :: iq1np_bulk_tab(:)
+          real(kind=WP),intent(in)  :: q1np_ktab(:), x(:,:)
           real(kind=WP),intent(out) :: vol_el
+          real(kind=WP),intent(out),optional :: detj_min_out
+          real(kind=WP),intent(in), optional :: q1np_cptab_opt(:,:)
 !C-----------------------------------------------
 !C   L o c a l   V a r i a b l e s
 !C-----------------------------------------------
           integer :: p, q, nctrl, offset_ctrl, offset_bulk
           integer :: elem_u, elem_v
           integer :: nknot_u, nknot_v
-          integer :: i, j, k, iu, iv
+          integer :: i, j, k, iu, iv, it
           integer :: n_top, n_total
           integer, allocatable :: node_ids(:)
           real(kind=WP) :: xi, eta, zeta, wg
@@ -106,6 +110,15 @@
           call q1np_get_knot_vectors(nx, ny, p, q, q1np_ktab, u, v)
 
 !C----------------------------------------------------------------------
+!C   Starter-side Jacobian checks may run before the global Q1NP Gauss
+!C   scheme is initialized in the regular startup sequence.
+!C----------------------------------------------------------------------
+          if (q1np_np_u_g <= 0 .or. q1np_np_v_g <= 0 .or. &
+     &        q1np_np_t_g <= 0) then
+            call q1np_init_gauss_scheme_starter(p + 1, q + 1, 2)
+          end if
+
+!C----------------------------------------------------------------------
 !C   Build node list: first NCTRL control points, then 4 bulk nodes
 !C----------------------------------------------------------------------
 !C     Control points (top surface)
@@ -120,9 +133,15 @@
 
 !C     Extract coordinates
           do k = 1, n_total
-            xnode(1,k) = x(1, node_ids(k))
-            xnode(2,k) = x(2, node_ids(k))
-            xnode(3,k) = x(3, node_ids(k))
+            if (k <= n_top .and. present(q1np_cptab_opt)) then
+              xnode(1,k) = q1np_cptab_opt(1, node_ids(k))
+              xnode(2,k) = q1np_cptab_opt(2, node_ids(k))
+              xnode(3,k) = q1np_cptab_opt(3, node_ids(k))
+            else
+              xnode(1,k) = x(1, node_ids(k))
+              xnode(2,k) = x(2, node_ids(k))
+              xnode(3,k) = x(3, node_ids(k))
+            end if
           end do
 
 !C----------------------------------------------------------------------
@@ -155,18 +174,10 @@
               end do
             end do
 
-            if (iel_q1np == 1) then
-              write(*,'(A,I6,4(A,1P,E12.5))') &
-     &  'Q1NP 2D AREA DBG: IEL_Q1NP=', iel_q1np, &
-     &  ' A2D=', area2d, &
-     &  ' SUM_W2D=', sum_w2d, &
-     &  ' DET2D_MIN=', det2d_min, &
-     &  ' DET2D_MAX=', det2d_max
-            end if
           end if
 
 !C----------------------------------------------------------------------
-!C   Volume via 2D surface integral at ZETA=+1 (NURBS top surface)
+!C   Volume via full 3D Gauss integration over (u, v, t)
 !C----------------------------------------------------------------------
           vol_el     = ZERO
           detj_min   = huge(detj)
@@ -175,48 +186,53 @@
           sum_n_min  = huge(sum_n)
           sum_n_max  = -huge(sum_n)
 
-          zeta = ONE
+          do it = 1, q1np_np_t_g
+            zeta = q1np_gp_t_g(it)
+            do iu = 1, q1np_np_u_g
+              xi = q1np_gp_u_g(iu)
+              do iv = 1, q1np_np_v_g
+                eta = q1np_gp_v_g(iv)
+                wg  = q1np_gw_u_g(iu) * q1np_gw_v_g(iv) &
+     &              * q1np_gw_t_g(it)
 
-          do iu = 1, q1np_np_u_g
-            xi = q1np_gp_u_g(iu)
-            do iv = 1, q1np_np_v_g
-              eta = q1np_gp_v_g(iv)
-              wg  = q1np_gw_u_g(iu) * q1np_gw_v_g(iv)
+                call q1np_shape_functions(xi, eta, zeta, p, q, u, v, &
+     &                                    elem_u, elem_v, nval, dn_local)
 
-              call q1np_shape_functions(xi, eta, zeta, p, q, u, v, &
-     &                                  elem_u, elem_v, nval, dn_local)
+                sum_n = ZERO
+                do k = 1, n_total
+                  sum_n = sum_n + nval(k)
+                end do
+                sum_n_min = min(sum_n_min, sum_n)
+                sum_n_max = max(sum_n_max, sum_n)
 
-              sum_n = ZERO
-              do k = 1, n_total
-                sum_n = sum_n + nval(k)
+                call q1np_jacobian(dn_local, xnode, n_total, jmat, detj)
+
+                vol_el   = vol_el + wg * detj
+                sum_w    = sum_w  + wg
+                detj_min = min(detj_min, detj)
+                detj_max = max(detj_max, detj)
               end do
-              sum_n_min = min(sum_n_min, sum_n)
-              sum_n_max = max(sum_n_max, sum_n)
-
-              call q1np_jacobian(dn_local, xnode, n_total, jmat, detj)
-
-              vol_el   = vol_el + wg * detj
-              sum_w    = sum_w  + wg
-              detj_min = min(detj_min, detj)
-              detj_max = max(detj_max, detj)
             end do
           end do
 
-          vol_el = 2 * vol_el
-
 !C----------------------------------------------------------------------
-!C   Optional debug output: volume diagnostics
+!C   Optional debug output: 3D volume diagnostics
 !C----------------------------------------------------------------------
           if (idebug_q1np_vol >= 2) then
             write(*,'(A,I6,6(A,1P,E12.5))') &
-     & 'Q1NP VOL DBG: IEL_Q1NP=', iel_q1np, &
+     & 'Q1NP VOL 3D DBG: IEL_Q1NP=', iel_q1np, &
      & ' VOL_EL=', vol_el, &
-     & ' SUM_W=', sum_w, &
+     & ' SUM_W3D=', sum_w, &
      & ' DETJ_MIN=', detj_min, &
      & ' DETJ_MAX=', detj_max, &
      & ' SUM_N_MIN=', sum_n_min, &
      & ' SUM_N_MAX=', sum_n_max
           end if
+
+!C----------------------------------------------------------------------
+!C   Return optional DETJ_MIN
+!C----------------------------------------------------------------------
+          if (present(detj_min_out)) detj_min_out = detj_min
 
 !C----------------------------------------------------------------------
 !C   Deallocate temporary arrays

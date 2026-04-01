@@ -92,7 +92,7 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   D U M M Y   A R G U M E N T S
 C-----------------------------------------------
-      integer, parameter :: nb_key = 8
+      integer, parameter :: nb_key = 9
       INTEGER IXS(NIXS,NUMELS),INUM(16,*),IPARTS(*),
      .        EADD(*),ITR1(*),INDEX(*),ITRI(nb_key,*),
      .        ND, ISOLNOD(*), CEP(*),
@@ -225,23 +225,23 @@ C           Debug: print Q1NP element information
 c        
       ENDDO
 C
-C       Debug: print total Q1NP elements found in ITRI(8)
+C       Debug: print total Q1NP elements found in ITRI(9)
       IF (IDEBUG_Q1NP_SORT > 0 .AND. NUMELQ1NP_G > 0) THEN
-        ! Count number of Q1NP elements by summing ITRI(8,:)
+        ! Count number of Q1NP elements by summing ITRI(9,:)
         NUM_Q1NP_FROM_ITRI = 0
 
-C       count number of Q1NP elements by summing ITRI(8,:)
+C       count number of Q1NP elements by summing ITRI(9,:)
         DO J = 1, NUMELS
-          IF (ITRI(8,J) == 1) NUM_Q1NP_FROM_ITRI = NUM_Q1NP_FROM_ITRI + 1
+          IF (ITRI(9,J) == 1) NUM_Q1NP_FROM_ITRI = NUM_Q1NP_FROM_ITRI + 1
         ENDDO
 
         WRITE(*,'(A,I4,A,I4)') 
      .    'Total Q1NP elements found: by input=', NUMELQ1NP_G,
-     .    ', by ITRI(8)=', NUM_Q1NP_FROM_ITRI
+     .    ', by ITRI(9)=', NUM_Q1NP_FROM_ITRI
       ENDIF
 C
       MODE=0
-      CALL MY_ORDERS( MODE, WORK, ITRI, INDEX, NUMELS , 8)
+      CALL MY_ORDERS( MODE, WORK, ITRI, INDEX, NUMELS , 9)
 C
       DO I=1,NUMELS
         IPARTS(I) =INUM(1,INDEX(I))

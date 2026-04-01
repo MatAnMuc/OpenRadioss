@@ -594,8 +594,10 @@ C-----------------------------------------------
       USE INIMAP2D_MOD
       USE FUNC2D_MOD
       USE Q1NP_RESTART_MOD
+      USE Q1NP_SURF_GRID_MOD
       USE Q1NP_PROMOTE_CP_MOD
       USE GENQ1NP_MOD
+      USE Q1NP_EXPORT_CSV_MOD
       USE GROUPDEF_MOD
       USE GROUP_MOD
       USE OPTIONDEF_MOD
@@ -846,12 +848,18 @@ C-----------------------------------------------
      *        IRESOFF,ITRIOFF,IGRNRBY,IQUAOFF
       integer, dimension(:), allocatable :: isolnod0,ishell3nod0
 C
+      INTEGER, DIMENSION(:),ALLOCATABLE ::
+     *        KNOD2ELS_NEW,KNOD2ELC_NEW,KNOD2ELTG_NEW,
+     *        KNOD2EL1D_NEW,KNOD2ELQ_NEW,NOD2ELS_NEW
+C
       INTEGER MAXQ1NPCTRL,
      .        SQ1NPBEZ_L,
      .        EXTRA_PER_EL,
      .        S_NOD2ELS_NEW
 
 C     Hardcoded parameters for Q1Np generation from surface, TODO
+C     TODO TRUE OR FALSE FOR SMOOTHING
+
       INTEGER ISURF_ID_TEST
       PARAMETER (ISURF_ID_TEST=1) !!! Set it a high number to skip smoothing !!!
       INTEGER P_TEST,Q_TEST
@@ -860,13 +868,17 @@ C     Hardcoded parameters for Q1Np generation from surface, TODO
       INTEGER NX_EST,NY_EST
       INTEGER NCP_U_EST,NCP_V_EST
       INTEGER NKNOT_U_EST,NKNOT_V_EST
+      INTEGER IERR_Q1NP_GRID
       INTEGER NUMNOD_OLD, NUMNOD_EST, NUMNOD_CP_ADDED
       INTEGER SX_OLD, SV_OLD, SD_OLD, SMS_OLD, SIN_OLD, SVR_OLD, SDR_OLD
       INTEGER SX_NEW, SV_NEW, SD_NEW, SMS_NEW, SIN_NEW, SVR_NEW, SDR_NEW
       INTEGER FIRST_ZERO_NODE, SITABM1_NEW
       INTEGER, ALLOCATABLE :: IWCONT_TMP(:), IWCIN2_TMP(:)
       INTEGER, ALLOCATABLE :: IKINE1LAG_TMP(:), DSDOF_TMP(:), DSDOF_NEW(:)
+      INTEGER, ALLOCATABLE :: ICODE_NEW(:), ISKEW_NEW(:)
       INTEGER, ALLOCATABLE :: ITAB_NEW(:), ITABM1_NEW(:)
+      INTEGER, ALLOCATABLE :: Q1NP_SEG_I_TMP(:), Q1NP_SEG_J_TMP(:)
+      INTEGER, ALLOCATABLE :: Q1NP_GRID_NODE_TMP(:,:), Q1NP_GRID_TO_SEG_TMP(:,:)
       my_real, ALLOCATABLE :: X_SAVE(:), V_SAVE(:), D_SAVE(:), MS_SAVE(:)
       my_real, ALLOCATABLE :: IN_SAVE(:), VR_SAVE(:), DR_SAVE(:), XYZREF_SAVE(:)
       INTEGER IEL, IEL_HEX8, OFFSET_CTRL, OFFSET_BULK, N_CTRL
@@ -3777,11 +3789,40 @@ C--------------------------------------------
         NSEG_SURF = IGRSURF(ISURF_ID_TEST)%NSEG
         IF (NSEG_SURF > 0) THEN
 
-C         Estimate grid dimensions: assume square grid
-          NX_EST = INT(SQRT(REAL(NSEG_SURF)))
-          NY_EST = NX_EST
-          IF (NX_EST*NY_EST < NSEG_SURF) NX_EST = NX_EST + 1
-          IF (NX_EST*NY_EST < NSEG_SURF) NY_EST = NY_EST + 1
+C         Derive grid dimensions from surface topology before sizing Q1NP arrays. 
+          NX_EST = 0
+          NY_EST = 0
+          IERR_Q1NP_GRID = 0
+          ALLOCATE(Q1NP_SEG_I_TMP(NSEG_SURF), Q1NP_SEG_J_TMP(NSEG_SURF),
+     .             STAT=stat)
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_TO_SEG_TMP(NSEG_SURF, NSEG_SURF), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_NODE_TMP(NSEG_SURF*4, NSEG_SURF*4), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            CALL Q1NP_BUILD_SURF_GRID(IGRSURF(ISURF_ID_TEST), NSEG_SURF,
+     .           NX_EST, NY_EST, Q1NP_SEG_I_TMP, Q1NP_SEG_J_TMP,
+     .           Q1NP_GRID_NODE_TMP, Q1NP_GRID_TO_SEG_TMP,
+     .           IERR_Q1NP_GRID)
+          ELSE
+            IERR_Q1NP_GRID = 7
+          ENDIF
+          IF (ALLOCATED(Q1NP_SEG_I_TMP)) DEALLOCATE(Q1NP_SEG_I_TMP)
+          IF (ALLOCATED(Q1NP_SEG_J_TMP)) DEALLOCATE(Q1NP_SEG_J_TMP)
+          IF (ALLOCATED(Q1NP_GRID_NODE_TMP)) DEALLOCATE(Q1NP_GRID_NODE_TMP)
+          IF (ALLOCATED(Q1NP_GRID_TO_SEG_TMP)) DEALLOCATE(Q1NP_GRID_TO_SEG_TMP)
+
+          IF (IERR_Q1NP_GRID /= 0 .OR. NX_EST <= 0 .OR. NY_EST <= 0) THEN
+C           Conservative fallback to avoid underallocation if the topology
+C           pre-pass fails. GENQ1NP will still do the authoritative check.
+            NX_EST = NSEG_SURF
+            NY_EST = 1
+            WRITE(IOUT,'(A,I6,A,I6,A)')
+     .        ' Q1NP WARNING: pre-sizing fallback used for surface ',
+     .        ISURF_ID_TEST, ' (grid ierr=', IERR_Q1NP_GRID, ').'
+          ENDIF
 
 C         Number of Q1Np elements = number of surface segments
           NUMELQ1NP_G = NSEG_SURF
@@ -3850,10 +3891,15 @@ C         Initialize arrays to zero
 
 C         Generate Q1NP elements from surface
           CALL GENQ1NP(IGRSURF,IXS,X,IPARTS,
-     .                 NSURF,NIXS,LIPART1,NUMNOD,NUMELS,IOUT,
+     .                 NSURF,NIXS,NUMNOD,NUMELS,IOUT,
      .                 KQ1NP_TAB,IQ1NP_TAB,IQ1NP_BULK_TAB,
      .                 Q1NP_WTAB,Q1NP_KTAB,Q1NP_CPTAB,
      .                 SQ1NPWEIGHT_L_G,NUMELQ1NP_G)
+
+          IF (q1np_export_csv) THEN
+            CALL Q1NP_EXPORT_HEX8_CSV(NUMELS,NIXS,IXS,X,NUMNOD,
+     .                                NUMELQ1NP_G,KQ1NP_TAB,NKQ1NP)
+          ENDIF
 
 C         Store Q1NP_KTAB pointer and grid dimensions in Q1NP_RESTART_MOD
           Q1NP_KTAB_G => Q1NP_KTAB
@@ -3904,7 +3950,6 @@ C                 control-point weights, size SQ1NPCTRL_SHARED_G, not per GP)
             WRITE(*,'(A)')  '--------------------------------------------------------------------------'
           ENDIF
 
-          ! CHECKED OK
           
 C         Promote control points to real mesh nodes
           IF (NUMELQ1NP_G > 0 .AND. SQ1NPCTRL_SHARED_G > 0) THEN
@@ -4169,9 +4214,63 @@ C                 DSDOF was not allocated, allocate it now
                 ENDIF
               ENDIF
             ENDIF
+
+C=======================================================================
+C           Keep BC storage consistent with the promoted node count
+C=======================================================================
+            IF (NUMNOD_CP_ADDED > 0) THEN
+              SICODE = NUMNOD
+              SISKEW = NUMNOD
+
+              IF (ALLOCATED(ICODE)) THEN
+                IF (SIZE(ICODE) < NUMNOD) THEN
+                  ALLOCATE(ICODE_NEW(NUMNOD), STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ICODE_NEW')
+                  ELSE
+                    ICODE_NEW(1:SIZE(ICODE)) = ICODE(1:SIZE(ICODE))
+                    ICODE_NEW(SIZE(ICODE)+1:NUMNOD) = 0
+                    DEALLOCATE(ICODE, STAT=stat)
+                    CALL MOVE_ALLOC(ICODE_NEW, ICODE)
+                  ENDIF
+                ENDIF
+              ELSE
+                ALLOCATE(ICODE(NUMNOD), STAT=stat)
+                IF (STAT /= 0) THEN
+                  CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                        MSGTYPE=MSGERROR, C1='ICODE')
+                ELSE
+                  ICODE(1:NUMNOD) = 0
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(ISKEW)) THEN
+                IF (SIZE(ISKEW) < NUMNOD) THEN
+                  ALLOCATE(ISKEW_NEW(NUMNOD), STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ISKEW_NEW')
+                  ELSE
+                    ISKEW_NEW(1:SIZE(ISKEW)) = ISKEW(1:SIZE(ISKEW))
+                    ISKEW_NEW(SIZE(ISKEW)+1:NUMNOD) = 0
+                    DEALLOCATE(ISKEW, STAT=stat)
+                    CALL MOVE_ALLOC(ISKEW_NEW, ISKEW)
+                  ENDIF
+                ENDIF
+              ELSE
+                ALLOCATE(ISKEW(NUMNOD), STAT=stat)
+                IF (STAT /= 0) THEN
+                  CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                        MSGTYPE=MSGERROR, C1='ISKEW')
+                ELSE
+                  ISKEW(1:NUMNOD) = 0
+                ENDIF
+              ENDIF
+            ENDIF
             
 C=======================================================================
-C           Step 6: After Q1NP CP promotion, update ITAB and ITABM1 to include new nodes
+C           Step 6: Update ITAB and ITABM1 for promoted CP nodes
 C=======================================================================
             IF (NUMNOD_CP_ADDED > 0) THEN
 C             Reallocate ITAB to include new nodes
@@ -4181,7 +4280,7 @@ C             Reallocate ITAB to include new nodes
      .                      MSGTYPE=MSGERROR, C1='ITAB_NEW')
               ELSE
                   ITAB_NEW(1:NUMNOD_OLD) = ITAB(1:NUMNOD_OLD)
-C               Assign user IDs to new CP nodes (starting from max existing user ID + 1)
+C               Assign user IDs to the promoted CP nodes
                 MAX_USER_ID = MAXVAL(ITAB(1:NUMNOD_OLD))
               DO I = NUMNOD_OLD + 1, NUMNOD
                 ITAB_NEW(I) = MAX_USER_ID + (I - NUMNOD_OLD)
@@ -4225,6 +4324,134 @@ C           Step 8: Update NUMNOD0
 C=======================================================================
             IF (NUMNOD_CP_ADDED > 0) THEN
               NUMNOD0 = NUMNOD
+C=======================================================================
+C           Step 9: Resize node->element mappings after CP promotion
+C=======================================================================
+C           KNOD2* arrays are dimensioned with NUMNOD+1. If NUMNOD has
+C           increased due to Q1NP promotion, enlarge them and preserve
+C           existing contents so that subsequent calls see a consistent topology.
+C-----------------------------------------------------------------------
+              IF (ALLOCATED(KNOD2ELS)) THEN
+                IF (SIZE(KNOD2ELS) < NUMNOD+1) THEN
+                  ALLOCATE(KNOD2ELS_NEW(NUMNOD+1),STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR,
+     .                           C1='KNOD2ELS_NEW')
+                  ELSE
+                    KNOD2ELS_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELS))) =
+     .                           KNOD2ELS(1:MIN(NUMNOD0+1,SIZE(KNOD2ELS)))
+                    IF (NUMNOD+1 > NUMNOD0+1) THEN
+                      KNOD2ELS_NEW(NUMNOD0+2:NUMNOD+1) = 0
+                    ENDIF
+                    DEALLOCATE(KNOD2ELS,STAT=stat)
+                    CALL MOVE_ALLOC(KNOD2ELS_NEW,KNOD2ELS)
+                  ENDIF
+                ENDIF
+              ENDIF
+              IF (ALLOCATED(KNOD2ELC)) THEN
+                IF (SIZE(KNOD2ELC) < NUMNOD+1) THEN
+                  ALLOCATE(KNOD2ELC_NEW(NUMNOD+1),STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR,
+     .                           C1='KNOD2ELC_NEW')
+                  ELSE
+                    KNOD2ELC_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELC))) =
+     .                           KNOD2ELC(1:MIN(NUMNOD0+1,SIZE(KNOD2ELC)))
+                    IF (NUMNOD+1 > NUMNOD0+1) THEN
+                      KNOD2ELC_NEW(NUMNOD0+2:NUMNOD+1) = 0
+                    ENDIF
+                    DEALLOCATE(KNOD2ELC,STAT=stat)
+                    CALL MOVE_ALLOC(KNOD2ELC_NEW,KNOD2ELC)
+                  ENDIF
+                ENDIF
+              ENDIF
+              IF (ALLOCATED(KNOD2ELTG)) THEN
+                IF (SIZE(KNOD2ELTG) < NUMNOD+1) THEN
+                  ALLOCATE(KNOD2ELTG_NEW(NUMNOD+1),STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR,
+     .                           C1='KNOD2ELTG_NEW')
+                  ELSE
+                    KNOD2ELTG_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELTG))) =
+     .                           KNOD2ELTG(1:MIN(NUMNOD0+1,SIZE(KNOD2ELTG)))
+                    IF (NUMNOD+1 > NUMNOD0+1) THEN
+                      KNOD2ELTG_NEW(NUMNOD0+2:NUMNOD+1) = 0
+                    ENDIF
+                    DEALLOCATE(KNOD2ELTG,STAT=stat)
+                    CALL MOVE_ALLOC(KNOD2ELTG_NEW,KNOD2ELTG)
+                  ENDIF
+                ENDIF
+              ENDIF
+              IF (ALLOCATED(KNOD2EL1D)) THEN
+                IF (SIZE(KNOD2EL1D) < NUMNOD+1) THEN
+                  ALLOCATE(KNOD2EL1D_NEW(NUMNOD+1),STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR,
+     .                           C1='KNOD2EL1D_NEW')
+                  ELSE
+                    KNOD2EL1D_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2EL1D))) =
+     .                           KNOD2EL1D(1:MIN(NUMNOD0+1,SIZE(KNOD2EL1D)))
+                    IF (NUMNOD+1 > NUMNOD0+1) THEN
+                      KNOD2EL1D_NEW(NUMNOD0+2:NUMNOD+1) = 0
+                    ENDIF
+                    DEALLOCATE(KNOD2EL1D,STAT=stat)
+                    CALL MOVE_ALLOC(KNOD2EL1D_NEW,KNOD2EL1D)
+                  ENDIF
+                ENDIF
+              ENDIF
+              IF (ALLOCATED(KNOD2ELQ)) THEN
+                IF (SIZE(KNOD2ELQ) < NUMNOD+1) THEN
+                  ALLOCATE(KNOD2ELQ_NEW(NUMNOD+1),STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR,
+     .                           C1='KNOD2ELQ_NEW')
+                  ELSE
+                    KNOD2ELQ_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELQ))) =
+     .                           KNOD2ELQ(1:MIN(NUMNOD0+1,SIZE(KNOD2ELQ)))
+                    IF (NUMNOD+1 > NUMNOD0+1) THEN
+                      KNOD2ELQ_NEW(NUMNOD0+2:NUMNOD+1) = 0
+                    ENDIF
+                    DEALLOCATE(KNOD2ELQ,STAT=stat)
+                    CALL MOVE_ALLOC(KNOD2ELQ_NEW,KNOD2ELQ)
+                  ENDIF
+                ENDIF
+              ENDIF
+C-----------------------------------------------------------------------
+C           NOD2ELS is sized from S_NOD2ELS; enlarge it for extra Q1NP
+C           node–element associations if needed, preserving existing data.
+C-----------------------------------------------------------------------
+              IF (ALLOCATED(NOD2ELS)) THEN
+                S_NOD2ELS_NEW = S_NOD2ELS
+                EXTRA_PER_EL = NBULKQ1NP + MAXQ1NPCTRL - 8
+                IF (EXTRA_PER_EL < 0) EXTRA_PER_EL = 0
+                IF (NUMELQ1NP_G > 0 .AND. EXTRA_PER_EL > 0) THEN
+                  S_NOD2ELS_NEW = S_NOD2ELS_NEW +
+     .                            EXTRA_PER_EL*NUMELQ1NP_G
+                ENDIF
+                IF (S_NOD2ELS_NEW > S_NOD2ELS) THEN
+                  ALLOCATE(NOD2ELS_NEW(S_NOD2ELS_NEW),STAT=stat)
+                  IF (STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR,
+     .                           C1='NOD2ELS_NEW')
+                  ELSE
+                    NOD2ELS_NEW(1:MIN(S_NOD2ELS,SIZE(NOD2ELS_NEW))) =
+     .                             NOD2ELS(1:MIN(S_NOD2ELS,
+     .                                           SIZE(NOD2ELS_NEW)))
+                    IF (S_NOD2ELS_NEW > S_NOD2ELS) THEN
+                      NOD2ELS_NEW(S_NOD2ELS+1:S_NOD2ELS_NEW) = 0
+                    ENDIF
+                    DEALLOCATE(NOD2ELS,STAT=stat)
+                    CALL MOVE_ALLOC(NOD2ELS_NEW,NOD2ELS)
+                    S_NOD2ELS = S_NOD2ELS_NEW
+                  ENDIF
+                ENDIF
+              ENDIF
 C-----------------------------------------------------------------------
 C             Reallocate IFRONT, IENTRY2, FLAGKIN for new NUMNOD and
 C             reinitialize (required before DOMDEC1/DOMDEC2)
@@ -6770,7 +6997,7 @@ C     NUMELS is the number of solid elements.
         K2 = K1 + NUMELS
         K3 = K2 + NUMELS+1
         K4 = K3 + NUMELS*2
-        K5 = K4 + NUMELS*8
+        K5 = K4 + NUMELS*9
         !K5B= K4 + NUMELS
         K6 = K5 + NUMELS
         !warning: please also update any index change

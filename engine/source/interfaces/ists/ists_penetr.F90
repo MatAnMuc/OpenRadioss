@@ -1,7 +1,7 @@
 !||====================================================================
 !||    sts_penetr  ../engine/source/interfaces/ists/ists_penetr.F90
 !||--- called by ------------------------------------------------------
-!||    STS_CONTACT_EVAL_PAIR   ../engine/source/interfaces/ists/ists_gen_sts.F90
+!||    STS_CONTACT_EVAL_PAIR   ../engine/source/interfaces/ists/ists_contact_eval_pair.F90
 !||====================================================================
 !-----------------------------------------------
 ! Penetration computation

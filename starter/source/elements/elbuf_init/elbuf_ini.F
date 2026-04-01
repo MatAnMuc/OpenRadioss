@@ -259,6 +259,37 @@ c         solid, quad & SPH cell elements
 c
 c=======================================================================
 
+C Check if this is a Q1NP group
+          IS_Q1NP_GROUP = .FALSE.
+          IF (ITY == 1) THEN
+            NFT = IPARG(3,NG)
+            IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN
+              IF (PRESENT(KQ1NP_TAB)) THEN
+                DO I = 1, NEL
+                  II = NFT + I
+                  IS_ELEMENT_Q1NP = .FALSE.
+                  IEL_Q1NP_FOUND = 0
+                  DO IEL_Q1NP = 1, NUMELQ1NP_G
+                    IF (KQ1NP_TAB(10, IEL_Q1NP) == II) THEN
+                      IS_Q1NP_GROUP = .TRUE.
+                      IS_ELEMENT_Q1NP = .TRUE.
+                      IEL_Q1NP_FOUND = IEL_Q1NP
+                      EXIT
+                    ENDIF
+                  ENDDO
+                ENDDO
+              ENDIF
+            ENDIF
+          ENDIF
+
+          ! Q1NP group: use Gauss scheme from IPARG (set in sgrtails)
+          IF (IS_Q1NP_GROUP) THEN
+            NPTR = IPARG(56,NG)
+            NPTS = IPARG(57,NG)
+            NPTT = IPARG(58,NG)
+            NPG = NPTR * NPTS * NPTT
+          ENDIF
+            
           TSHELL  = 0
           TSH_ORT = 0
           IF (IGTYP==20 .OR. IGTYP==21 .OR. IGTYP==22 .or. 
@@ -269,9 +300,11 @@ c---------ELEMENT PROPERTY
           IF (ITY == 101) THEN
             NLAY = 1
           ELSEIF (NPT == 1) THEN
-            NPTR  = 1                           
-            NPTS  = 1                          
-            NPTT  = 1 
+            IF (.NOT. IS_Q1NP_GROUP) THEN
+              NPTR  = 1                           
+              NPTS  = 1                          
+              NPTT  = 1 
+            ENDIF
             IF (JMULT > 0) THEN   ! multimateriau 
               NLAY = 2
             ELSE     
@@ -328,93 +361,6 @@ c              ENDIF
 c---------
           ELSE  ! Solid property
             NLAY = 1    
-C
-        IF (IDEBUG_Q1NP_BUF > 0) THEN
-          WRITE(*,'(A,I4,A,I4, A)') 
-     .      'Group ', NG, ' contains ', NEL, ' element(s)'
-        ENDIF
-C Check if this is a Q1NP group
-            IS_Q1NP_GROUP = .FALSE.
-            IF (ITY == 1) THEN
-              NFT = IPARG(3,NG)
-              IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN
-                IF (PRESENT(KQ1NP_TAB)) THEN
-                  DO I = 1, NEL
-                    II = NFT + I
-                    IS_ELEMENT_Q1NP = .FALSE.
-                    IEL_Q1NP_FOUND = 0
-                    DO IEL_Q1NP = 1, NUMELQ1NP_G
-                      IF (KQ1NP_TAB(10, IEL_Q1NP) == II) THEN
-                        IS_Q1NP_GROUP = .TRUE.
-                        IS_ELEMENT_Q1NP = .TRUE.
-                        IEL_Q1NP_FOUND = IEL_Q1NP
-                        EXIT
-                      ENDIF
-                    ENDDO
-C           Debug: print all elements in group with details
-                    IF (IDEBUG_Q1NP_BUF > 0) THEN
-                      IF (IS_ELEMENT_Q1NP) THEN
-                        WRITE(*,'(A,I8,A,I4,A,I4,A,I4,A,I4,A)') 
-     .                    '  Element ', II, 
-     .                    ' is Q1NP (IEL_Q1NP=', IEL_Q1NP_FOUND, 
-     .                    ', Material=', IXS(1,II), 
-     .                    ', Property=', IXS(10,II), ')'
-                      ELSE
-                        WRITE(*,'(A,I8,A,I4,A,I4,A)') 
-     .                    '  Element ', II, 
-     .                    ' is standard solid (Material=', IXS(1,II),
-     .                    ', Property=', IXS(10,II), ')'
-                      ENDIF
-                    ENDIF
-                  ENDDO
-                ELSE
-C           If KQ1NP_TAB not present, just list elements
-                  IF (IDEBUG_Q1NP_BUF > 0) THEN
-                    DO I = 1, NEL
-                      II = NFT + I
-                      WRITE(*,'(A,I8,A,I4,A,I4,A)') 
-     .                  '  Element ', II, 
-     .                  ' (KQ1NP_TAB not available, Material=', IXS(1,II),
-     .                  ', Property=', IXS(10,II), ')'
-                    ENDDO
-                  ENDIF
-                ENDIF
-              ELSE
-C         No Q1NP elements in model, but still print group info for all groups
-                IF (IDEBUG_Q1NP_BUF > 0) THEN
-                  DO I = 1, NEL
-                    II = NFT + I
-                    WRITE(*,'(A,I8,A,I4,A,I4,A)') 
-     .                '  Element ', II, 
-     .                ' is standard solid (Material=', IXS(1,II),
-     .                ', Property=', IXS(10,II), ')'
-                  ENDDO
-                ENDIF
-              ENDIF
-            ENDIF
-            
-            IF (IS_Q1NP_GROUP) THEN
-C             Q1NP group: use Gauss scheme from IPARG (set in sgrtails)
-              NPTR = IPARG(56,NG)
-              NPTS = IPARG(57,NG)
-              NPTT = IPARG(58,NG)
-              NPG = NPTR * NPTS * NPTT
-
-C           Debug: print Q1NP Gauss scheme information
-              IF (IDEBUG_Q1NP_BUF > 0) THEN
-                WRITE(*,'(A,I4,A,I4,A,I4,A,I4,A,I4)') 
-     .            '  Gauss scheme: NPTR=', NPTR, 
-     .            ', NPTS=', NPTS, 
-     .            ', NPTT=', NPTT, 
-     .            ', Total Gauss points=', NPG
-              ENDIF
-            ELSE
-            
-C             Standard solid logic (existing code)
-              IF (IDEBUG_Q1NP_BUF > 0) THEN
-                WRITE(*,'(A,I4,A)') 
-     .            '  Group ', NG, ' is standard solid (no Q1NP)'
-              ENDIF
             IF (JHBE == 16 .AND. ISNOD == 20) THEN
               NPTR = NPT/100
               NPTS = MOD(NPT/10,10)
@@ -443,7 +389,6 @@ C             Standard solid logic (existing code)
               NPTR = 2
               NPG  = NPT
             END IF
-            ENDIF  ! IS_Q1NP_GROUP
           ENDIF
 c---------
 c
@@ -496,11 +441,6 @@ c----------------------------------------------------
 C           Q1NP buffer allocation (only for Q1NP groups)
             IF (IS_Q1NP_GROUP) THEN
               ALLOCATE(BUFLY%Q1NP(NPTR,NPTS,NPTT))
-              IF (IDEBUG_Q1NP_BUF > 0) THEN
-                WRITE(*,'(A,I4,A,I4,A,I4,A,I4)') 
-     .            '  Q1NP Buffer allocated: Layer ', IL, 
-     .            ', Size: ', NPTR, 'x', NPTS, 'x', NPTT
-              ENDIF
             ELSE
               ALLOCATE(BUFLY%Q1NP(0,0,0))  ! Empty allocation for non-Q1NP groups
             ENDIF
@@ -789,37 +729,13 @@ C                     Store for all elements in the group
                         ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_WEIGHT(IEL) = GP_WEIGHT
                       ENDDO
 C
-C                     Debug: Print first Gauss point data for first element
-                      IF (IDEBUG_Q1NP_BUF > 0 .AND. IR == 1 .AND. IS == 1 .AND. IT == 1) THEN
-                        WRITE(*,'(A,I4,A,I4,A,I4,A)') 
-     .                    '  Q1NP GP[', IR, ',', IS, ',', IT, ']:'
-                        WRITE(*,'(A,F10.6,A,F10.6,A,F10.6,A,F10.6)') 
-     .                    '    Coord (xi,eta,Zeta) = (', XI_GP, ',', ETA_GP, ',', ZETA_GP, 
-     .                    '), Weight = ', GP_WEIGHT
-                        IF (NEL > 0) THEN
-                          GP_WT_CHECK = ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_WEIGHT(1)
-                          WRITE(*,'(A,F10.6)') 
-     .                      '    Element 1: Weight = ', GP_WT_CHECK
-                        ENDIF
-                        WRITE(*,*) '=============================================='
-                        WRITE(*,*) ''
-                      ENDIF
                     ELSE
 C                     Invalid indices: initialize to zero
-                      IF (IDEBUG_Q1NP_BUF > 0) THEN
-                        WRITE(*,'(A,I4,A,I4,A,I4,A)') 
-     .                    '  WARNING: Q1NP GP[', IR, ',', IS, ',', IT, 
-     .                    '] indices out of range'
-                      ENDIF
                       ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_COORD(1:3*NEL) = ZERO
                       ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_WEIGHT(1:NEL) = ZERO
                     ENDIF
                   ELSE
 C                   Gauss scheme not initialized: initialize to zero
-                    IF (IDEBUG_Q1NP_BUF > 0) THEN
-                      WRITE(*,'(A)') 
-     .                  '  WARNING: Q1NP Gauss scheme not initialized'
-                    ENDIF
                     ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_COORD(1:3*NEL) = ZERO
                     ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_WEIGHT(1:NEL) = ZERO
                   ENDIF
@@ -1241,23 +1157,6 @@ c            Lloc = lloc + bufly%l_Vol0dp
           ENDDO
 c          print*,'      local=',(LLOC * NEL + NPAR_LBUF) * NPG
 c-----------------------------------
-C           Q1NP buffer length (only for Q1NP groups)
-            IF (IS_Q1NP_GROUP) THEN
-C             GP_COORD: 3*NEL reals, GP_WEIGHT: NEL reals per integration point
-C             Total: 4*NEL reals per integration point
-              LQ1NP = 0
-              DO IL = 1, NLAY
-                BUFLY => ELBUF_TAB(NG)%BUFLY(IL)
-                DO IR = 1, NPTR
-                  DO IS = 1, NPTS
-                    DO IT = 1, BUFLY%NPTT
-                      LQ1NP = LQ1NP + 4*NEL  ! 3 for coordinates + 1 for weight
-                    ENDDO
-                  ENDDO
-                ENDDO
-              ENDDO
-              BUFLEN = BUFLEN + LQ1NP        
-            ENDIF
 c-----------------------------------
           IPARG(66,NG) = BUFLEN    !  size of restart transfer table 
 c          print*,' elbuf_ini : buflen=',buflen
@@ -2155,7 +2054,7 @@ c
 c          
           ENDDO
           IPARG(66,NG) = BUFLEN    !  size of restart transfer table 
-          IF (DEBUG_PRINT == 1 .OR. IDEBUG_Q1NP_BUF > 0) THEN
+          IF (DEBUG_PRINT == 1) THEN
             WRITE(*,'(A,I4,A,I10)') 
      .        '  elbuf_ini: Group ', NG, ', Buffer length = ', BUFLEN
           ENDIF
@@ -2661,56 +2560,6 @@ c
 c
             BUFLEN = BUFLEN + (LLOC * NEL + NPAR_LBUF) * NIP_LAY
 C
-C           Q1NP buffer length (only for Q1NP groups)
-C           Check if Q1NP buffer was allocated by checking IPARG values or IS_Q1NP_GROUP
-C           Q1NP groups have NPTR=3, NPTS=3, NPTT=2 (or check IS_Q1NP_GROUP if available)
-            IS_Q1NP_CHECK = .FALSE.
-            IF (Q1NP_NP_U_G > 0 .AND. Q1NP_NP_V_G > 0 .AND. Q1NP_NP_T_G > 0) THEN
-C             Check if this matches Q1NP Gauss scheme (3x3x2)
-              IF (NPTR == Q1NP_NP_U_G .AND. NPTS == Q1NP_NP_V_G .AND. 
-     .            NPTT == Q1NP_NP_T_G) THEN
-                IS_Q1NP_CHECK = .TRUE.
-              ENDIF
-            ENDIF
-C           Debug: Always print check info for first layer
-            IF (IDEBUG_Q1NP_BUF > 0) THEN
-              IF (IL == 1) THEN
-                WRITE(*,'(A,L1,A,L1,A,I4,A,I4,A,I4)') 
-     .            '  Q1NP Buffer Check: IS_Q1NP_GROUP=', IS_Q1NP_GROUP, 
-     .            ', IS_Q1NP_CHECK=', IS_Q1NP_CHECK,
-     .            ', NPTR/NPTS/NPTT=', NPTR, '/', NPTS, '/', NPTT
-                WRITE(*,'(A,I4,A,I4,A,I4)') 
-     .            '    Q1NP_NP_U/V/T_G=', Q1NP_NP_U_G, '/', Q1NP_NP_V_G, '/', Q1NP_NP_T_G
-                WRITE(*,'(A,I4,A,I4)') 
-     .            '    BUFLY%NPTT=', BUFLY%NPTT, ', NIP_LAY=', NIP_LAY
-              ENDIF
-            ENDIF
-C           Use IS_Q1NP_CHECK as primary check (IS_Q1NP_GROUP might not be in scope here)
-            IF (IS_Q1NP_CHECK) THEN
-C             GP_COORD: 3*NEL reals, GP_WEIGHT: NEL reals per integration point
-C             Total: 4*NEL reals per integration point
-              LQ1NP = 0
-              DO IR = 1, NPTR
-                DO IS = 1, NPTS
-                  DO IT = 1, BUFLY%NPTT
-                    LQ1NP = LQ1NP + 4*NEL  ! 3 for coordinates + 1 for weight
-                  ENDDO
-                ENDDO
-              ENDDO
-              BUFLEN = BUFLEN + LQ1NP
-              IF (IDEBUG_Q1NP_BUF > 0) THEN
-                WRITE(*,'(A,I4,A,I10,A,I4,A,I4,A,I4)') 
-     .            '  Q1NP Buffer length: Layer ', IL, 
-     .            ', Added ', LQ1NP, ' reals (', NPTR, 'x', NPTS, 
-     .            'x', BUFLY%NPTT, ' GP x 4*NEL)'
-              ENDIF
-            ELSE
-C             Debug: Why was Q1NP buffer length not added?
-              IF (IDEBUG_Q1NP_BUF > 0 .AND. IL == 1) THEN
-                WRITE(*,'(A)') 
-     .            '  WARNING: Q1NP buffer length not added (condition not met)'
-              ENDIF
-            ENDIF
           ENDDO
 c---------
 C----
