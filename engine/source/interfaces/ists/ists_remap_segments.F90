@@ -5,7 +5,7 @@
 !||--- calls ---------------------------------------------------------
 !||    (none – local mapping only)
 !||====================================================================
-      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG, &
+      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, X, CAND_SEC_SEG, &
      &  IRECT, CONT_ELEMENT, COUNT, IGRSURF, CAND_SEC_SEG_ID, &
      &  CAND_MST_SEG_ID, MAX_STS_SIZE_ACTUAL)
 !-----------------------------------------------
@@ -28,7 +28,6 @@
 !-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
       TYPE (SURF_)   , DIMENSION(*)   :: IGRSURF
-      INTEGER ITAB(*)
       INTEGER IRECT(4,*)
       my_real X(3,*)
       INTEGER CAND_SEC_SEG(MAX_STS_SIZE_ACTUAL)
@@ -80,7 +79,8 @@
       COUNT = 0
 
       ! Map candidate nodes to segment pairs
-      DO I = 1, INTBUF_TAB(1)%S_CAND_N
+       DO I = 1, INTBUF_TAB(1)%S_CAND_N 
+        IF (INTBUF_TAB(1)%CAND_N(I) > 0) THEN            
         candidate = INTBUF_TAB(1)%NSV(INTBUF_TAB(1)%CAND_N(I))
         candidateM = INTBUF_TAB(1)%CAND_E(I)
         
@@ -117,6 +117,7 @@
             END IF
           END IF
         END DO
+        ENDIF
       END DO
       
       ! Adjacency matrix - filter out invalid entries

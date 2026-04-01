@@ -2334,12 +2334,11 @@ C       3.Step: Call Q1Np mass calculation routine
 C=======================================================================
         CALL Q1NP_MASS3(
      .     RHO_HEX8, MS, PARTSAV, X, V,
-     .     IPART, MSS, VOLU_HEX8,
-     .     IN,
-     .     VR, RHOF_HEX8, FRAC_HEX8, FILL,
+     .     VOLU_HEX8,
+     .     FILL,SFILL,
      .     KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
-     .     IXS, NUMELQ1NP_G, NPROPM, NUMMAT, PM,
-     .     NUMELS, NUMNOD, Q1NP_KTAB_G)
+     .     NUMELQ1NP_G, NPROPM, NUMMAT, PM,
+     .     NUMELS, NUMNOD)
 
 C=======================================================================
 C       4.Step: Deallocate temporary arrays

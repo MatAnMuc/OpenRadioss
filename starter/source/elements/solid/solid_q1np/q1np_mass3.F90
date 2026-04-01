@@ -21,12 +21,11 @@
 !
         subroutine q1np_mass3( &
      &      rho, ms, partsav, x, v, &
-     &      ipart, mss, volu, &
-     &      in, &
-     &      vr, rhof, frac, fill, &
+     &      volu, &
+     &      fill,sfill, &
      &      kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
-     &      ixs, numelq1np_in, npropm, nummat, pm, &
-     &      numels, numnod, q1np_ktab_g)
+     &      numelq1np_in, npropm, nummat, pm, &
+     &      numels, numnod)
 !-----------------------------------------------------------------------
           implicit none
 !-----------------------------------------------------------------------
@@ -37,16 +36,12 @@
           integer, intent(in) :: kq1np_tab(15, *)
           integer, intent(in) :: iq1np_tab(*)
           integer, intent(in) :: iq1np_bulk_tab(*)
-          integer, intent(in) :: ixs(NIXS,*)
-          integer, intent(in) :: ipart(*)
+          integer, intent(in) :: sfill
           real(kind=WP), intent(inout) :: ms(*), partsav(20,*)
           real(kind=WP), intent(inout) :: x(3,*), v(3,*)
-          real(kind=WP), intent(inout) :: mss(8,*)
-          real(kind=WP), intent(inout) :: in(*), vr(3,*)
-          real(kind=WP), intent(in)    :: rho(*), volu(*), rhof(*), frac(*), fill(*)
+          real(kind=WP), intent(in)    :: rho(*), volu(*), fill(sfill)
           real(kind=WP), intent(in)    :: pm(npropm, nummat)
           integer, intent(in)          :: numels, numnod
-          real(kind=WP), intent(in)    :: q1np_ktab_g(*)
 !-----------------------------------------------------------------------
 !     Local variables
 !-----------------------------------------------------------------------
@@ -91,12 +86,18 @@
 !           Get density
             if (mid > 0) then
               mass_total = pm(1,mid) * volu_q1np
-              if (fill(iel_hex8) > ZERO) then
-                mass_total = fill(iel_hex8) * mass_total
+              if (sfill >0) then
+                if (fill(iel_hex8) > ZERO) then
+                  mass_total = fill(iel_hex8) * mass_total
+                end if
               end if
             else
-              if (fill(iel_hex8) > ZERO) then
-                mass_total = fill(iel_hex8) * rho(iel_hex8) * volu_q1np
+              if (sfill >0) then
+                if (fill(iel_hex8) > ZERO) then
+                  mass_total = fill(iel_hex8) * rho(iel_hex8) * volu_q1np
+                else
+                  mass_total = rho(iel_hex8) * volu_q1np  
+                end if
               else
                 mass_total = rho(iel_hex8) * volu_q1np
               end if

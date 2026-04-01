@@ -774,6 +774,9 @@ C-----------------------------------------------
               use init_ale_mod , only : init_ale
               use sfem_mod
               use init_global_boundary_list_mod , only : init_global_boundary_list
+              USE RESTMOD, ONLY: IQ1NP_TAB, IQ1NP_BULK_TAB, KQ1NP_TAB,
+     .                           Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB
+              USE Q1NP_RESTART_MOD, ONLY : NUMELQ1NP_G,SQ1NPCTRL_SHARED_G  
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -1364,6 +1367,7 @@ C NEW VARIABLES
               my_real, allocatable :: PRIMARY_SEG_MAT(:,:)
               my_real, allocatable :: SECONDARY_SEG_MAT(:,:)
               LOGICAL :: STS_ACTIVE
+              integer :: iel,iel_hex8,n_ctrl,offset_ctrl,offset_bulk,node_bulk(4),node_cp
 C-----------------------------------------------------------------------------------
   
               type(SPH_WORK_)  :: SPH_WORK   !< working Areas for SPLISSV and SPHPREP
@@ -1380,7 +1384,7 @@ C-----------------------------------------------
 C STS (Segment-to-Segment) Contact Initialization
 C-----------------------------------------------
       STS_ACTIVE = .TRUE.  ! Enable STS contact processing
-
+C      STS_ACTIVE = .FALSE.  ! Enable STS contact processing
 C-----------------------------------------------
 C Build NODE_MAT: Local ID, Global ID, and Coordinates
 C-----------------------------------------------
@@ -1412,7 +1416,61 @@ C-----------------------------------------------
           SOLID_ELEMENT_MAT(i, :) = IXS((i - 1) * 11 + 1 : i * 11)
           print '(F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, 
      &          F8.0, F8.0, F10.0)', SOLID_ELEMENT_MAT(i, :)
-      end do    
+      end do  
+C-----------------------------------------------
+C PRINT QNP ELEMENT CONNECTIVITY for test of restart files - duplicated form lectur 
+C-----------------------------------------------     
+      print *, ''
+      print *, '--- Q1NP element connectivity ---',numelq1np_g 
+      print *, ''
+      do iel = 1, numelq1np_g 
+        iel_hex8 = kq1np_tab(10, iel)
+        if (iel_hex8 <= 0 .or. iel_hex8 > numels) cycle 
+        n_ctrl      = kq1np_tab(3, iel)
+        offset_ctrl = kq1np_tab(4, iel)
+        offset_bulk = kq1np_tab(14, iel) 
+        print *, '   Bulk nodes (iq1np_bulk_tab):',n_ctrl
+        do i = 1, 4
+        node_bulk(i) = iq1np_bulk_tab(offset_bulk + i - 1)
+        print *, '    BULK', i, ' node =', node_bulk(i)
+        enddo 
+
+c       print complete connectivity matrix for element
+        print '(a,i4,a,13(i5))', 
+     .           '   Element', iel, ' connectivity:',
+     .           (node_bulk(i), i=1,4),
+     .           (iq1np_tab(offset_ctrl + i - 1), i=1, n_ctrl)
+        print '(a,i4)', 
+     .           '     Total nodes:', 4 + n_ctrl
+        print *, '=============================================='
+        print *, ' '
+      enddo
+      print *, ''
+      print *, '--- IQ1NP_BULK_TAB array ---',SIZE(IQ1NP_BULK_TAB)
+      print *, ''
+      do i = 1, SIZE(IQ1NP_BULK_TAB)
+         print *,'IQ1NP_BULK_TAB',I,IQ1NP_BULK_TAB(i)
+      enddo  
+      print *, ''
+      print *, '--- Q1NP_WTAB array ---',SIZE(Q1NP_WTAB)
+      print *, ''
+      do i = 1, SIZE(Q1NP_WTAB)
+         print *,'Q1NP_WTAB',I,Q1NP_WTAB(i)
+      enddo    
+      print *, ''
+      print *, '--- Q1NP_KTAB ---',SIZE(Q1NP_KTAB)
+      print *, ''
+      do i = 1, SIZE(Q1NP_KTAB)
+         print *,'Q1NP_KTAB',I,Q1NP_KTAB(i)
+      enddo   
+      print *, ''
+      print *, '--- Q1NP_CPTAB ---',SQ1NPCTRL_SHARED_G
+      print *, ''
+      do i = 1, SQ1NPCTRL_SHARED_G
+         print *,'Q1NP_CPTAB',I,Q1NP_CPTAB(1:3,i)
+      enddo              
+      print *, '=============================================='
+      print *, ' '
 
 C-----------------------------------------------
 C Interface Type and Secondary Nodes Information
@@ -1423,15 +1481,15 @@ C-----------------------------------------------
       print *, ''
       print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
       DO I = 1, NINTER
-          print *, INTERFACES%INTBUF_TAB(I)%NSV
+        print *, INTERFACES%INTBUF_TAB(I)%NSV
       ENDDO
 
 C-----------------------------------------------
 C Process PRIMARY Surface (Master Surface for STS)
 C-----------------------------------------------
       write(*,*)
-      print *, "Internal ID of the selected group of PRIMARY nodes 
-     &         (for STS):", IPARI(46,1)
+c      print *, "Internal ID of the selected group of PRIMARY nodes 
+c     &         (for STS):", IPARI(46,1)
       
       IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
      .    IPARI(46,1) <= NSURF) THEN
@@ -1491,7 +1549,7 @@ C           Create temporary IRECTS array from secondary surface nodes
             CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, 
      &                             NODES%ITAB)
 C           Remove duplicate nodes from NSV array
-            CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB)
+            CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB,IPARI)
 C           Debug output: Print surface and interface data
 C            CALL WRITE_IGRSURF(INTERFACES%INTBUF_TAB, IGRSURF, 
 C     &                        NODES%ITAB)
@@ -10044,7 +10102,7 @@ C   Creates a unique list of secondary nodes for contact search algorithm.
 C   The algorithm uses a mask-based approach to identify duplicates and
 C   extracts only unique node IDs into INTBUF_TAB%NSV.
 C
-      SUBROUTINE REMOVE_DUPLI(INTBUF_TAB)
+      SUBROUTINE REMOVE_DUPLI(INTBUF_TAB,IPARI)
 C-----------------------------------------------
 C   M o d u l e s
 C----------------------------------------------- 
@@ -10062,6 +10120,7 @@ C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
+      INTEGER IPARI(NPARI,NINTER)
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
@@ -10156,9 +10215,9 @@ C     Update NSV array with unique nodes
 C         Deallocate existing NSV if present
           IF (ALLOCATED(INTBUF_TAB(1)%NSV)) THEN
               DEALLOCATE(INTBUF_TAB(1)%NSV)
-          ENDIF
-          
+          ENDIF    
           INTBUF_TAB(1)%S_NSV = n
+          IPARI(5,1) = n
           ALLOCATE(INTBUF_TAB(1)%NSV(INTBUF_TAB(1)%S_NSV))
           INTBUF_TAB(1)%NSV(1:n) = unique_arr(1:n)
           

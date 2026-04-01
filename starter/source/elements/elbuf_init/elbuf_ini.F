@@ -229,7 +229,7 @@ c----
 c if xfem, count buffer's length only in the groups with xfem phantom elements  
 cc        IF (ICRACK3D > 0 .AND. IXFEM == 0) CYCLE
 c----
-                                                      
+         IS_Q1NP_GROUP = .FALSE.                                 
          IF (DEBUG_PRINT == 1) THEN
             print*,'**** GROUP,ITY,IGTYP,MLW=',ng,ity,igtyp,mlw
             print*,'     NPAR_TAB,NPAR_LAY,NPAR_LBUF=',NPAR_TAB,NPAR_LAY,NPAR_LBUF
@@ -248,7 +248,7 @@ c
         CRKDIR = 0
         LNLOC  = 0 
         LNLOCTS= 0      
-        
+
         IF (IXFEM == 0 .AND. FLAG_XFEM == 1) CYCLE ! no "XFEM_TAB" buffer for non xfem PARTS
 c
 c=======================================================================
@@ -841,7 +841,7 @@ c
                   FLOC%NVAR  = MAT_PARAM(MX)%FAIL(J)%NUVAR                          
                   CALL MY_ALLOC(FLOC%VAR,FLOC%NVAR*NEL)
                   FLOC%VAR = ZERO     
-                  LFAIL = LFAIL + FLOC%NVAR*NEL + 1 
+                  LFAIL = LFAIL + FLOC%NVAR*NEL + 1    
 c
                   FLOC%LF_DAM  = FAIL_TAG(IRUPT)%LF_DAM                        
                   CALL MY_ALLOC(FLOC%DAM,FLOC%LF_DAM*NEL)
@@ -1252,7 +1252,7 @@ C             Total: 4*NEL reals per integration point
                   ENDDO
                 ENDDO
               ENDDO
-              BUFLEN = BUFLEN + LQ1NP        
+              BUFLEN = BUFLEN + LQ1NP       
             ENDIF
 c-----------------------------------
           IPARG(66,NG) = BUFLEN    !  size of restart transfer table 
@@ -1697,9 +1697,9 @@ c                LVISC = LVISC + NUVARV*NEL
                   FLOC=>ELBUF_TAB(NG)%INTLAY(IL)%FAIL(IR,IS)%FLOC(J)           
                   FLOC%ILAWF = MAT_PARAM(IMAT(IL))%FAIL(J)%IRUPT 
                   FLOC%IDFAIL = MAT_PARAM(IMAT(IL))%FAIL(J)%FAIL_ID                                              
-                  FLOC%NVAR  = MAT_PARAM(IMAT(IL))%FAIL(J)%NUVAR                             
+                  FLOC%NVAR  = MAT_PARAM(IMAT(IL))%FAIL(J)%NUVAR                          
                   CALL MY_ALLOC(FLOC%VAR,FLOC%NVAR*NEL)
-                  FLOC%VAR = ZERO                                                   
+                  FLOC%VAR = ZERO                                               
                   LIFAIL = LIFAIL + FLOC%NVAR*NEL + 3                               
                 ENDDO                                                              
               ENDDO                                                                  
@@ -2302,7 +2302,7 @@ c
                       FLOC%NVAR  = MAT_PARAM(IMAT(IL))%FAIL(1)%NUVAR                              
                       CALL MY_ALLOC(FLOC%VAR,FLOC%NVAR*NEL)
                       FLOC%VAR = ZERO     
-                      LFAIL = LFAIL + FLOC%NVAR*NEL + 1 
+                      LFAIL = LFAIL + FLOC%NVAR*NEL + 1     
 c
                       FLOC%LF_DAM  = FAIL_TAG(IRUPT)%LF_DAM                        
                       CALL MY_ALLOC(FLOC%DAM,FLOC%LF_DAM*NEL)

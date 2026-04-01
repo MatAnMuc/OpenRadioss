@@ -57,7 +57,7 @@
         logical :: q1np_export_csv = .TRUE.
       contains
         subroutine genq1np(igrsurf, ixs, x, iparts,&
-     &      nsurf, nixs, lipart1, numnod, numels, iout,&
+     &      nsurf, nixs, numnod, numels, iout,&
      &      kq1np_tab, iq1np_tab, iq1np_bulk_tab,&
      &      q1np_wtab, q1np_ktab, q1np_cptab, nweight_max, numelq1np_out)
 !C-----------------------------------------------
@@ -106,7 +106,7 @@
           type(surf_), dimension(nsurf), intent(in) :: igrsurf
           integer, intent(in) :: ixs(nixs, *)
           real(kind=WP), intent(in) :: x(3, *)
-          integer, intent(in) :: nsurf, nixs, lipart1, numnod, numels, iout
+          integer, intent(in) :: nsurf, nixs, numnod, numels, iout
           integer, intent(in) :: nweight_max
           integer, intent(out) :: numelq1np_out
           integer, intent(in) :: iparts(*)
@@ -165,7 +165,7 @@
         PRINT*, 'Q1NP DEBUG: Number of surfaces NSURF = ', NSURF
         PRINT*, 'Q1NP DEBUG: Surface ID ISURF_ID = ', ISURF_ID
       ENDIF
-
+      
       IF (ISURF_ID < 1 .OR. ISURF_ID > NSURF) THEN
         CALL ANCMSG(MSGID=402, &
      &      MSGTYPE=MSGERROR, &
@@ -305,7 +305,7 @@
 !C=======================================================================
       CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V,      &
-     &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,     &
+     &     GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,             &
      &     IDEBUG_Q1NP, IQ1NP_CP_METHOD, DIV )
 !C=======================================================================
 !C   Step 6: Generate Q1Np elements from fitted NURBS surface and HEX8 bulk mesh
@@ -502,7 +502,7 @@
 !C=======================================================================
            SUBROUTINE Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V,            &
-     &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,           &
+     &     GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,           &
      &     IDEBUG_IN, ICP_METHOD_IN, DIV_IN )
 
         USE precision_mod,   ONLY : WP
@@ -517,7 +517,6 @@
         INTEGER, INTENT(IN) :: GRID_NODE(:,:)
         REAL(WP), INTENT(IN) :: X(3,*)
         REAL(WP), INTENT(IN) :: Q1NP_KTAB(*)
-        INTEGER, INTENT(IN) :: CP_MAP(:,:)
         INTEGER, INTENT(IN) :: IDEBUG_IN, ICP_METHOD_IN, DIV_IN
         REAL(WP), INTENT(INOUT) :: Q1NP_CPTAB(3,*)
 
@@ -673,7 +672,7 @@
 !C     present at each point (A_ROW), and weighting appropriately by the data's coordinates.
 !C     ------------------------------------------------------------------
         IF (IDEBUG_IN > 0) THEN
-          WRITE(*,*) ''
+          WRITE(*,*) ' '
           WRITE(*,*) 'Q1NP DEBUG: FITTING METHOD 0 - plain least-squares (subdivision points)'
         ENDIF
 !C     Fill DATA_PT with subdivision points (bilinear interpolation in each quad)
@@ -711,7 +710,7 @@
         ENDDO
 
         IF (IDEBUG_IN > 1) THEN
-          WRITE(*,*) ''
+          WRITE(*,*) ' '
           WRITE(*,*) 'Q1NP DEBUG: after filling data points, DIV = ', DIV_IN
           WRITE(*,'(A)') ' DATAPOINT            X        Y        Z        U       V'
           DO I = 1, NDATA
@@ -770,7 +769,7 @@
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
        ELSE IF (ICP_METHOD_IN  .EQ. 1) THEN
         IF (IDEBUG_IN > 0) THEN
-          WRITE(*,*) ''
+          WRITE(*,*) ' '
           WRITE(*,*) 'Q1NP DEBUG: FITTING METHOD 1 - Tikhonov-regularized least-squares'
         ENDIF
 

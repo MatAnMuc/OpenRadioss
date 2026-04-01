@@ -123,7 +123,7 @@
               end do
             end do
           end do
-
+ 
 !     Temporary grid for node IDs (offset indexing so (1,1) is valid)
           do ii = 1-off, off*2+1
             do jj = 1-off, off*2+1
@@ -163,7 +163,8 @@
             do idir = 1, 4
               d = dir_list(idir)
               jseg = neighbor(iseg, d)
-              if (jseg .le. 0 .or. seg_i(jseg) .ne. 0) cycle
+              if (jseg .le. 0) cycle
+              if (seg_i(jseg) .ne. 0) cycle
 
               seg_i(jseg) = ii + delta_i(d)
               seg_j(jseg) = jj + delta_j(d)

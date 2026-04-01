@@ -54,7 +54,7 @@ C     ISEL(NSELS)          ARRAY: SELECTED SOLIDS FOR TH            E/S
 C     ITR1(NSELS)          ARRAY: WORKING                            E/S
 C     EADD(NUMELS)         ARRAY: IDAM INDEXES / checkboard            S
 C     INDEX(NUMELS)        ARRAY: WORKING                            E/S
-C     ITRI(8,NUMELS)       ARRAY: WORKING                            E/S
+C     ITRI(9,NUMELS)       ARRAY: WORKING                            E/S
 C     IPARTS(NUMELS)       ARRAY: PART                               E/S
 C     CEP(NUMELS)          ARRAY: WORKING                            E/S
 C     XEP(NUMELS)          ARRAY: WORKING                            E/S
@@ -91,7 +91,7 @@ C-----------------------------------------------
 C   D U M M Y   A R G U M E N T S
 C-----------------------------------------------
       INTEGER IXS(NIXS,NUMELS),ISEL(*),INUM(16,*),IPARTS(*),
-     .        EADD(*),ITR1(*),INDEX(*),ITRI(8,*),
+     .        EADD(*),ITR1(*),INDEX(*),ITRI(9,*),
      .        ND, ISOLNOD(*), CEP(*),
      .        XEP(*),IXS10(6,*),IXS20(12,*),IXS16(8,*),
      .        NOD2ELS(*), ISOLOFF(*),

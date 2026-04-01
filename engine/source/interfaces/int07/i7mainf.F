@@ -936,7 +936,7 @@ C==========================================================
 C
 
         ! Find contact partners/candidates only once
-        CALL STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG,
+         CALL STS_REMAP_SEGMENTS(INTBUF_TAB, X, CAND_SEC_SEG,
      &   INTBUF_TAB%IRECTM, CONT_ELEMENT, COUNT, IGRSURF,
      &   CAND_SEC_SEG_ID, CAND_MST_SEG_ID, MAX_STS_SIZE_ACTUAL)
 
@@ -989,14 +989,11 @@ C
 
         OPTION = 0 !FOR GAUSS STS ALGORITHM
         QFRICT = 0.d0 !Friction energy
-        ALPHA0 = XFILTR_FRIC !Parameter for friction force calculation
                
        CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION,
      &   CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
      &   load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
-     &   FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
-     &   V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
-     &   INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
+     &   FRICC, XMU, INTBUF_TAB%IFPEN, QFRICT, GAP)
         !IMPACT_glob indicates if any contact was found
 
         ! If no contact found with GAUSS algorithm, try LOBATTO algorithm
@@ -1012,13 +1009,10 @@ C
 
             OPTION = 1 !FOR LOBATTO STS ALGORITHM
             QFRICT = 0.d0
-            ALPHA0 = XFILTR_FRIC
             CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION,
      &      CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
      &      load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
-     &      FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
-     &      V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
-     &      INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
+     &      FRICC, XMU, INTBUF_TAB%IFPEN, QFRICT, GAP)
           
             IF (IMPACT_glob == 0) THEN
                 WRITE(*,*) "NO IMPACT FOUND WITH LOBATTO SEARCH ALGORITHM"
