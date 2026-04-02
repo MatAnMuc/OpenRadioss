@@ -148,12 +148,12 @@ C
         ALLOCATE(XNUM_RNOISE(NPERTURB,0),STAT=stat)
       ENDIF
 C
-        IF (IDEBUG_Q1NP_SORT > 0) THEN
-          WRITE(*,*) ''
-          WRITE(*,*) '=============================================='
-          WRITE(*,*) 'SGRHEAD: Checking Q1NP elements'
-          WRITE(*,*) '=============================================='
-        ENDIF
+      IF (IDEBUG_Q1NP_SORT > 0) THEN
+        WRITE(*,*) ''
+        WRITE(*,*) '=============================================='
+        WRITE(*,*) 'SGRHEAD: Checking Q1NP elements'
+        WRITE(*,*) '=============================================='
+      ENDIF
       DO I=1,NUMELS
         INDEX2(I)=PERMUTATION%SOLID(I)
         EADD(I)=1
@@ -200,6 +200,7 @@ C
      .                                 itri,ixs,igeo, 
      .                                 ipm,pm,geo, 
      .                                 mat_param)
+      DO I=1,NUMELS
 Clef 9---------------------------------
 C       Q1NP element flag ITRI(9)
         IS_Q1NP = 0
