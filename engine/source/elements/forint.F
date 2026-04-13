@@ -264,7 +264,7 @@ C-----------------------------------------------
      .   ICP,ICS,IMATVIS,IEXPAN,NPT0,IG,OFF_IGRTH,
      .   NCTRL,IPARSENS,ISECT,GAMA(6),PX,PY,PZ,ISENS_ENERGY,
      .   IEL_Q1NP_GRP
-      LOGICAL IS_Q1NP_GROUP
+      LOGICAL IS_Q1NP_GROUP, lFOUND
       my_real BID,QMVBID,PRELOAD1,STF_F
       my_real SBID
       my_real VOLN(MVSIZ)
@@ -1104,14 +1104,19 @@ C-------------------------
                
                IF (NUMELQ1NP_G > 0 .AND. ALLOCATED(KQ1NP_TAB) .AND.
      .             ALLOCATED(IQ1NP_TAB)) THEN
+                 IS_Q1NP_GROUP = .TRUE.
                  DO I = 1, NEL
+                   lFOUND = .FALSE.
                    DO IEL_Q1NP_GRP = 1, NUMELQ1NP_G
                      IF (KQ1NP_TAB(5,IEL_Q1NP_GRP) == IXS(NIXS,NFT + I)) THEN
-                       IS_Q1NP_GROUP = .TRUE.
+                       lFOUND = .TRUE.
                        EXIT
                      ENDIF
                    ENDDO
-                   IF (IS_Q1NP_GROUP) EXIT
+                   IF (.NOT. lFOUND) THEN
+                     IS_Q1NP_GROUP = .FALSE.
+                     EXIT
+                   ENDIF
                  ENDDO
                ENDIF
 
@@ -1127,7 +1132,7 @@ C
      7         SNPC, NUMGEO, NUMNOD, NUMELS, NUMELQ, NGROUP,
      8         SBUFMAT, STF, NUMMAT, NTABLE, NSVOIS, IRESP,
      9         IDEL7NOK, MAXFUNC, USERL_AVAIL, IMON_MAT, impl_s,
-     A         idyna, IDTMIN, DT, SENSORS)
+     A         idyna, IDTMIN, DT, ITAB, SENSORS)
              
              ELSE
 

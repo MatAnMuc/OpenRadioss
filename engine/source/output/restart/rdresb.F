@@ -1051,6 +1051,30 @@ C Bounds validation
         IF (SQ1NPBULK_G > 0) THEN
           CALL READ_I_C(IQ1NP_BULK_TAB,SQ1NPBULK_G)
         ENDIF
+
+C     Q1NP knot-set metadata (heterogeneous NX/NY support)
+       CALL READ_I_C(ITMP,1)
+       Q1NP_NKNOT_SETS_G = MAX(0, ITMP)
+       IF (Q1NP_NKNOT_SETS_G > 0) THEN
+         IF (ALLOCATED(Q1NP_NX_SET_G)) DEALLOCATE(Q1NP_NX_SET_G)
+         IF (ALLOCATED(Q1NP_NY_SET_G)) DEALLOCATE(Q1NP_NY_SET_G)
+         IF (ALLOCATED(Q1NP_KTAB_OFF_G)) DEALLOCATE(Q1NP_KTAB_OFF_G)
+         IF (ALLOCATED(Q1NP_KTAB_LEN_G)) DEALLOCATE(Q1NP_KTAB_LEN_G)
+
+         ALLOCATE(Q1NP_NX_SET_G(Q1NP_NKNOT_SETS_G))
+         ALLOCATE(Q1NP_NY_SET_G(Q1NP_NKNOT_SETS_G))
+         ALLOCATE(Q1NP_KTAB_OFF_G(Q1NP_NKNOT_SETS_G))
+         ALLOCATE(Q1NP_KTAB_LEN_G(Q1NP_NKNOT_SETS_G))
+
+         CALL READ_I_C(Q1NP_NX_SET_G,Q1NP_NKNOT_SETS_G)
+         CALL READ_I_C(Q1NP_NY_SET_G,Q1NP_NKNOT_SETS_G)
+         CALL READ_I_C(Q1NP_KTAB_OFF_G,Q1NP_NKNOT_SETS_G)
+         CALL READ_I_C(Q1NP_KTAB_LEN_G,Q1NP_NKNOT_SETS_G)
+
+         ! Keep legacy single-grid view compatible with existing code paths.
+         Q1NP_NX_G = Q1NP_NX_SET_G(1)
+         Q1NP_NY_G = Q1NP_NY_SET_G(1)
+       ENDIF
       ENDIF
 C----------------------------------
       CALL READ_I_C(TAG_SKINS6,NUMELS)

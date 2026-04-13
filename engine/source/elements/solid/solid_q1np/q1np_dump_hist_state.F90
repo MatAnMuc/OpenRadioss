@@ -66,7 +66,7 @@
 
       INTEGER :: IEL_Q1NP
       INTEGER :: P, Q, NCTRL, OFFSET_CTRL, OFFSET_BULK
-      INTEGER :: K, LID, GID, ITMP
+      INTEGER :: K, LID, GID, ITMP, OUT_ID
       INTEGER :: MAX_GID
 
       INTEGER :: NX_LOC, NY_LOC
@@ -130,13 +130,23 @@
 
          OPEN(UNIT=99, FILE='q1np_nurbs_info.csv', &
               STATUS='REPLACE', ACTION='WRITE')
-         WRITE(99,'(A)') 'NX,NY,P,Q,NUMELQ1NP,SQ1NPCTRL_SHARED,SQ1NPBULK,'// &
-                         'SQ1NPKNOT_L'
          P = KQ1NP_TAB(8,1)
          Q = KQ1NP_TAB(9,1)
-         WRITE(99,'(I10,1X,I10,1X,I5,1X,I5,1X,I10,1X,I10,1X,I10,1X,I10)') &
-              Q1NP_NX_G, Q1NP_NY_G, P, Q, &
-              NUMELQ1NP_G, SQ1NPCTRL_SHARED_G, SQ1NPBULK_G, SQ1NPKNOT_L_G
+
+         IF (Q1NP_NKNOT_SETS_G > 0 .AND. ALLOCATED(Q1NP_NX_SET_G)) THEN
+            WRITE(99,'(A)') 'knot_set_id,NX,NY,P,Q,KTAB_OFF,KTAB_LEN'
+            DO ITMP = 1, Q1NP_NKNOT_SETS_G
+               WRITE(99,'(I10,1X,I10,1X,I10,1X,I5,1X,I5,1X,I10,1X,I10)') &
+                    ITMP, Q1NP_NX_SET_G(ITMP), Q1NP_NY_SET_G(ITMP), P, Q, &
+                    Q1NP_KTAB_OFF_G(ITMP), Q1NP_KTAB_LEN_G(ITMP)
+            END DO
+         ELSE
+            WRITE(99,'(A)') 'NX,NY,P,Q,NUMELQ1NP,SQ1NPCTRL_SHARED,SQ1NPBULK,'// &
+                            'SQ1NPKNOT_L'
+            WRITE(99,'(I10,1X,I10,1X,I5,1X,I5,1X,I10,1X,I10,1X,I10,1X,I10)') &
+                 Q1NP_NX_G, Q1NP_NY_G, P, Q, &
+                 NUMELQ1NP_G, SQ1NPCTRL_SHARED_G, SQ1NPBULK_G, SQ1NPKNOT_L_G
+         END IF
          CLOSE(99)
 
          NURBS_WRITTEN = .TRUE.
@@ -200,21 +210,17 @@
                   SEEN_CP(GID) = SEEN_TAG
                END IF
 
-!              Convert global node id -> local index for X(.,local)
-               LID = 0
-               IF (ALLOCATED(ITAB_DEBUG)) THEN
-                  DO ITMP = 1, SIZE(ITAB_DEBUG)
-                     IF (ITAB_DEBUG(ITMP) == GID) THEN
-                        LID = ITMP
-                        EXIT
-                     END IF
-                  END DO
-               END IF
+!              IQ1NP connectivity stores engine-local node indices.
+               LID = GID
                IF (LID <= 0) CYCLE
+               OUT_ID = GID
+               IF (ALLOCATED(ITAB_DEBUG)) THEN
+                  IF (LID <= SIZE(ITAB_DEBUG)) OUT_ID = ITAB_DEBUG(LID)
+               END IF
 
                WRITE(LUX_CP, &
                     '(ES23.15,1X,I10,3(1X,ES23.15))') &
-                    TIME_CUR, GID, &
+                    TIME_CUR, OUT_ID, &
                     X(1,LID), X(2,LID), X(3,LID)
             END DO
          END IF
@@ -228,21 +234,17 @@
                SEEN_BULK(GID) = SEEN_TAG
             END IF
 
-!           Convert global node id -> local index for X(.,local)
-            LID = 0
-            IF (ALLOCATED(ITAB_DEBUG)) THEN
-               DO ITMP = 1, SIZE(ITAB_DEBUG)
-                  IF (ITAB_DEBUG(ITMP) == GID) THEN
-                     LID = ITMP
-                     EXIT
-                  END IF
-               END DO
-            END IF
+!           IQ1NP bulk connectivity stores engine-local node indices.
+            LID = GID
             IF (LID <= 0) CYCLE
+            OUT_ID = GID
+            IF (ALLOCATED(ITAB_DEBUG)) THEN
+               IF (LID <= SIZE(ITAB_DEBUG)) OUT_ID = ITAB_DEBUG(LID)
+            END IF
 
             WRITE(LUX_BULK, &
                  '(ES23.15,1X,I10,3(1X,ES23.15))') &
-                 TIME_CUR, GID, &
+                 TIME_CUR, OUT_ID, &
                  X(1,LID), X(2,LID), X(3,LID)
          END DO
 

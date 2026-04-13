@@ -62,8 +62,11 @@
 !C=======================================================================
         subroutine genq1np(igrsurf, ixs, x, iparts,&
      &      nsurf, nixs, numnod, numels, iout,&
+     &      isurf_id_in, knot_set_id_in, &
      &      kq1np_tab, iq1np_tab, iq1np_bulk_tab,&
-     &      q1np_wtab, q1np_ktab, q1np_cptab, nweight_max, numelq1np_out)
+     &      q1np_wtab, q1np_ktab, q1np_cptab, nweight_max, csv_surf_id_in, &
+     &      numelq1np_out)
+        use q1np_geom_mod, only : q1np_get_knot_vectors
   !C-----------------------------------------------
   !C   D u m m y   A r g u m e n t s
   !C-----------------------------------------------
@@ -80,6 +83,8 @@
   !C                  KQ1NP_TAB(7,*) = Element index in v direction (0-based)
   !C                  KQ1NP_TAB(8,*) = NURBS degree p
   !C                  KQ1NP_TAB(9,*) = NURBS degree q
+  !C                  KQ1NP_TAB(12,*)= Surface grid element count NX (u) for knot sizing
+  !C                  KQ1NP_TAB(13,*)= Surface grid element count NY (v) for knot sizing
   !C                  KQ1NP_TAB(14,*)= Offset to bulk nodes in IQ1NP_BULK_TAB
   !C     IQ1NP_TAB  - Control point connectivity array (output)
   !C                  Stores (p+1)*(q+1) control-point IDs per element
@@ -91,7 +96,6 @@
   !C                  Next NKNOT_V entries: V knot vector
   !C     NUMELQ1NP_OUT  - Number of generated Q1Np elements (output)
   !C-----------------------------------------------
-      INTEGER, PARAMETER :: IDEBUG_Q1NP = 0
   !C     CP fitting method:
   !C       0 = 3D least-squares fitting with subdivision samples
   !C       1 = Tikhonov-regularized least-squares using grid nodes only
@@ -103,7 +107,6 @@
       INTEGER, PARAMETER :: DIV = 2 ! subdivision per quad for method 0 (fitting samples)
       REAL(KIND=WP), PARAMETER :: Q1NP_DETJ_THRESHOLD = 1.0E-12_WP
       INTEGER, PARAMETER :: Q1NP_MAX_FIT_RETRIES = 3
-      INTEGER, PARAMETER :: ISURF_ID = 1 ! Surface ID to use for generation
       INTEGER, PARAMETER :: P = 2 ! NURBS degrees (quadratic in u and v)
       INTEGER, PARAMETER :: Q = 2 ! NURBS degrees (quadratic in u and v)
       INTEGER, PARAMETER :: NBULKQ1NP = 4 ! Number of bulk nodes per Q1Np element
@@ -120,7 +123,10 @@
       integer, intent(in) :: numnod
       integer, intent(in) :: numels
       integer, intent(in) :: iout
+      integer, intent(in) :: isurf_id_in
+      integer, intent(in) :: knot_set_id_in
       integer, intent(in) :: nweight_max
+      integer, intent(in) :: csv_surf_id_in
       integer, intent(out) :: numelq1np_out
       integer, intent(inout) :: kq1np_tab(:,:)
       integer, intent(inout) :: iq1np_tab(:)
@@ -132,14 +138,12 @@
   !   L o c a l   V a r i a b l e s
   !C-----------------------------------------------
       INTEGER ISEG,IEL,IEL_HEX8
+      INTEGER ISURF_ID            ! Selected internal surface index for generation
       INTEGER NODES_SURF(4)       ! Surface segment node IDs
       INTEGER NODES_BULK(4)       ! Bulk face node IDs from HEX8
       INTEGER NSEG                ! Number of surface segments
       INTEGER NX,NY               ! Grid dimensions (elements in u,v directions)
       INTEGER NCP_U,NCP_V         ! Number of control points in u,v directions
-      INTEGER NODE_ID             ! Node ID for debug output
-      INTEGER CP_NODE             ! Control point node ID
-      INTEGER CP_IDX,CP_IDY       ! Control point grid indices
       INTEGER NCTRL               ! Control points per element: (p+1)*(q+1)
       INTEGER I,J,K,II,JJ         ! Loop indices
       INTEGER IEL_Q1NP            ! Q1Np element counter = 0
@@ -167,17 +171,15 @@
       INTEGER :: NJAC_FAIL, IRETRY
       REAL(KIND=WP) :: ORIENT_TOP_MAG, ORIENT_BOT_MAG
       REAL(KIND=WP) :: ORIENT_TOP_BOT_DOT, ORIENT_TOP_BOT_COS
+      REAL(KIND=WP) :: BULK_MATCH_SCORE
       INTEGER :: IERR_ORIENT
+      INTEGER :: IERR_BULK
+      REAL(KIND=WP), ALLOCATABLE :: U_KNOT_GEN(:), V_KNOT_GEN(:)
 
   !C=======================================================================
   !C   Step 1: Validate surface ID and get number of segments
   !C=======================================================================
-  !C     Debug: print surface information
-  !C=======================================================================
-      IF (IDEBUG_Q1NP > 0) THEN
-        PRINT*, 'Q1NP DEBUG: Number of surfaces NSURF = ', NSURF
-        PRINT*, 'Q1NP DEBUG: Surface ID ISURF_ID = ', ISURF_ID
-      ENDIF
+      ISURF_ID = isurf_id_in
 
       IF (ISURF_ID < 1 .OR. ISURF_ID > NSURF) THEN
         WRITE(IOUT,'(A,I8,A,I8)') &
@@ -198,13 +200,6 @@
 
   !C     For now, check both NSEG and NSEG_IGE fields
       IF (NSEG <= 0 .AND. IGRSURF(ISURF_ID)%NSEG_IGE <= 0) THEN
-        IF (IDEBUG_Q1NP > 0) THEN
-          PRINT*, 'Q1NP DEBUG: ERROR - No surface segments found!'
-          PRINT*, 'Q1NP DEBUG: NSEG = ', NSEG, ', NSEG_IGE = ', IGRSURF(ISURF_ID)%NSEG_IGE
-          PRINT*, 'Q1NP DEBUG: Surface segments may not be read yet.'
-          PRINT*, 'Q1NP DEBUG: GENQ1NP might be called too early in the pipeline.'
-          PRINT*, 'Q1NP DEBUG: Check if surfaces are read before GENQ1NP is called.'
-        ENDIF
         NUMELQ1NP_OUT = 0
         RETURN
       ENDIF
@@ -275,16 +270,16 @@
   !C     Number of control points per element (tensor product)
       NCTRL = (P+1)*(Q+1)
 
+      NKNOT_U = NX + 2*P + 1
+      NKNOT_V = NY + 2*Q + 1
+
   !C=======================================================================
   !C   Set up NURBS knot vectors and weights (baseline for fitting)
   !C=======================================================================
       CALL SETUPNURBSQ1NP(NX,NY,P,Q, &
      &      Q1NP_KTAB,NCP_U,NCP_V, &
      &      Q1NP_WTAB,NWEIGHT_MAX)
-
-
-      NKNOT_U = NX + 2*P + 1
-      NKNOT_V = NY + 2*Q + 1
+  !C     Q1NP_KTAB: U then V knot vectors; Q1NP_WTAB: weights per global CP
 
       ! Both U and V knot vectors are stored in Q1NP_KTAB
       ! NCP_U and NCP_V are the number of control points in u and v directions
@@ -354,18 +349,6 @@
         NUMELQ1NP_OUT = 0
         RETURN
       ENDIF
-      IF (SIZE(Q1NP_KTAB) < NKNOT_U + NKNOT_V) THEN
-        WRITE(IOUT,'(A,2I10)') &
-     &    ' Q1NP ERROR: Q1NP_KTAB too small, need/have = ', &
-     &    NKNOT_U + NKNOT_V, SIZE(Q1NP_KTAB)
-        WRITE(*,'(A,2I10)') &
-     &    ' Q1NP ERROR: Q1NP_KTAB too small, need/have = ', &
-     &    NKNOT_U + NKNOT_V, SIZE(Q1NP_KTAB)
-        CALL ANCMSG(MSGID=364, MSGTYPE=MSGERROR, ANMODE=ANINFO, &
-     &      C1='Q1NP Q1NP_KTAB too small')
-        NUMELQ1NP_OUT = 0
-        RETURN
-      ENDIF
 
   !C     Subdivision for sampling (method 0 only): DIV*DIV interior sample points
   !C     per quad (ensures NDATA >= NCP for fitting). NDATA is the number of data
@@ -407,14 +390,15 @@
       CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD, &
      &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,     &
-     &     IDEBUG_Q1NP, IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT )
+     &     IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT, &
+     &     CSV_SURF_ID_IN )
 
   !C=======================================================================
   !C   Step 5b: Select a global NURBS parameter orientation.
   !C   Only the top NURBS indexing is flipped; bulk-node ordering stays fixed.
   !C=======================================================================
       CALL Q1NP_SELECT_GLOBAL_CP_ORIENTATION(NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
-     &     CP_MAP, Q1NP_CPTAB, GRID_NODE, GRID_TO_SEG, IXS, &
+     &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, &
      &     NIXS, NUMELS, X, IOUT)
 
   !C=======================================================================
@@ -425,6 +409,14 @@
   !C=======================================================================
   !C   Step 6: Generate Q1Np elements from fitted NURBS surface and HEX8 bulk mesh
   !C=======================================================================
+      ALLOCATE(U_KNOT_GEN(NX + 2*P + 1), V_KNOT_GEN(NY + 2*Q + 1), STAT=IEL)
+      IF (IEL .NE. 0) THEN
+        CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,C1='Q1NP gen knot vectors')
+        NUMELQ1NP_OUT = 0
+        RETURN
+      ENDIF
+      CALL Q1NP_GET_KNOT_VECTORS(NX, NY, P, Q, Q1NP_KTAB, U_KNOT_GEN, V_KNOT_GEN)
+
   !C     Offsets into IQ1NP_TAB (control points) and IQ1NP_BULK_TAB (bulk nodes)
       OFFSET_CTRL = 1
       OFFSET_BULK = 1
@@ -458,6 +450,26 @@
      &      ANMODE=ANINFO, &
      &      C1='Q1NP surface segment has no matching HEX8')
             exit elem_loop
+          ENDIF
+
+          CALL Q1NP_REBUILD_BULK_FROM_HEX_GEOM(I, J, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
+     &        NIXS, NUMELS, CP_MAP, 0, U_KNOT_GEN, V_KNOT_GEN, Q1NP_CPTAB, X, IXS, IEL_HEX8, &
+     &        NODES_BULK, BULK_MATCH_SCORE, IERR_BULK)
+          IF (IERR_BULK .NE. 0) THEN
+            WRITE(IOUT,'(A,I8,A,2I6,A,I8,A,I4)') &
+     &        ' Q1NP ERROR: failed to rebuild bulk face for element ', &
+     &        IEL_Q1NP + 1, ' grid=', I-1, J-1, ' hex_gid=', IXS(NIXS,IEL_HEX8), &
+     &        ' ierr=', IERR_BULK
+            WRITE(*,'(A,I8,A,2I6,A,I8,A,I4)') &
+     &        ' Q1NP ERROR: failed to rebuild bulk face for element ', &
+     &        IEL_Q1NP + 1, ' grid=', I-1, J-1, ' hex_gid=', IXS(NIXS,IEL_HEX8), &
+     &        ' ierr=', IERR_BULK
+            CALL ANCMSG(MSGID=364, &
+     &        MSGTYPE=MSGERROR, &
+     &        ANMODE=ANINFO, &
+     &        C1='Q1NP bulk-face reconstruction failed')
+            NUMELQ1NP_OUT = 0
+            RETURN
           ENDIF
 
   !C         Get material and property IDs from HEX8 element
@@ -500,7 +512,7 @@
           END IF
 
   !C=======================================================================
-  !C         Step 6b:   Store element properties in KQ1NP_TAB
+  !C         Step 6b:   Store element properties in KQ1NP_TAB (main INT table)
   !C=======================================================================
           KQ1NP_TAB(1,IEL_Q1NP) = MID              ! Material ID
           KQ1NP_TAB(2,IEL_Q1NP) = PID              ! Property ID
@@ -514,9 +526,12 @@
           KQ1NP_TAB(14,IEL_Q1NP) = OFFSET_BULK     ! Offset into IQ1NP_BULK_TAB
           KQ1NP_TAB(10,IEL_Q1NP) = IEL_ORIG        ! Local HEX8 index
           KQ1NP_TAB(11,IEL_Q1NP) = IPARTS(IEL_ORIG)! Owning part ID
+          KQ1NP_TAB(12,IEL_Q1NP) = NX              ! Surface grid element count in u (engine knot sizing)
+          KQ1NP_TAB(13,IEL_Q1NP) = NY              ! Surface grid element count in v (engine knot sizing)
+          KQ1NP_TAB(15,IEL_Q1NP) = knot_set_id_in ! Knot-set selection for per-element knot vectors
 
   !C=======================================================================
-  !C         Step 6c: Store control point connectivity (tensor product order)
+  !C         Step 6c: Store control point connectivity in IQ1NP_TAB (CP node IDs)
   !C=======================================================================
   !C         Element at (i,j) uses control points: cp_map(i+ii, j+jj)
   !C         for ii in [0,p], jj in [0,q] (Fortran: ii=0..p, jj=0..q)
@@ -532,7 +547,7 @@
           ENDDO
 
   !C=======================================================================
-  !C         Step 6d: Store bulk nodes in the same parametric corner order
+  !C         Step 6d: Store HEX8 bulk face nodes in IQ1NP_BULK_TAB (4 nodes / element)
   !C         as the bottom bilinear shape functions.
   !C=======================================================================
           IQ1NP_BULK_TAB(OFFSET_BULK)   = NODES_BULK(1)
@@ -540,44 +555,6 @@
           IQ1NP_BULK_TAB(OFFSET_BULK+2) = NODES_BULK(3)
           IQ1NP_BULK_TAB(OFFSET_BULK+3) = NODES_BULK(4)
           OFFSET_BULK = OFFSET_BULK + 4
-
-  !C=======================================================================
-  !C         Step 6e: Debug: Print element information
-  !C=======================================================================
-      IF (IDEBUG_Q1NP > 0) THEN
-        PRINT*, ' '
-        PRINT*, 'Q1NP DEBUG: '
-        PRINT*, '  Element: ', IEL_Q1NP, ' (Global ID: ', ELEM_ID, ')'
-        PRINT*, '  Grid position: (', I-1, ',', J-1, ')'
-        PRINT*, '  Material ID:  ', MID
-        PRINT*, '  Property ID:  ', PID
-        PRINT '(A,1PE12.4,A,1PE12.4,A,1PE12.4,A,1PE12.4)', &
-     &    '  orient top_mag=', ORIENT_TOP_MAG, ' bot_mag=', ORIENT_BOT_MAG, &
-     &    ' dot=', ORIENT_TOP_BOT_DOT, ' cos=', ORIENT_TOP_BOT_COS
-        !PRINT*, '  HEX8 element: ', IEL_HEX8, ' (Global ID: ', IXS(NIXS,IEL_HEX8), ')'
-        PRINT*, '  Bulk nodes:'
-        DO II=1,4
-          NODE_ID = NODES_BULK(II)
-          PRINT '(A,I7,A,F6.2,A,F6.2,A,F6.2,A)', '    Node ', NODE_ID, ': (', &
-     &      X(1,NODE_ID), ', ', X(2,NODE_ID), ', ', X(3,NODE_ID), ')'
-        ENDDO
-        PRINT*, '  Control points (NURBS-defined surface):'
-        DO JJ=0,Q
-          DO II=0,P
-            CP_IDX = I + II
-            CP_IDY = J + JJ
-            IF (CP_IDX <= MAX_CP_U .AND. CP_IDY <= MAX_CP_V) THEN
-              CP_NODE = CP_MAP(CP_IDX,CP_IDY)
-              PRINT 101, '    CP[', II, ',', JJ, '] = CP ', &
-     &      CP_NODE, ': (', Q1NP_CPTAB(1,CP_NODE), ', ', &
-     &      Q1NP_CPTAB(2,CP_NODE), ', ', &
-     &      Q1NP_CPTAB(3,CP_NODE), ')'
-            ELSE
-              PRINT*, '    CP[', II, ',', JJ, '] = 0 (not set)'
-            ENDIF
-          ENDDO
-        ENDDO
-      ENDIF
 
         end do   ! i
       end do elem_loop   ! j
@@ -597,7 +574,8 @@
           CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &       NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD, &
      &       GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,       &
-     &       IDEBUG_Q1NP, IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT )
+     &       IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT, &
+     &       CSV_SURF_ID_IN )
           CALL Q1NP_REPORT_FIT_ERROR(NX, NY, P, Q, NCP_U, NCP_V, &
      &       NCP, NUMNOD, GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB, IOUT)
         ENDIF
@@ -640,13 +618,17 @@
         CALL Q1NP_EXPORT_NURBS_CSV(NCP_U,NCP_V,MAX_CP_U,MAX_CP_V, &
      &      Q1NP_CPTAB,CP_MAP, &
      &      NUMELQ1NP_OUT,KQ1NP_TAB, &
-     &      IQ1NP_TAB,IQ1NP_BULK_TAB,NUMNOD)
+     &      IQ1NP_TAB,IQ1NP_BULK_TAB,NUMNOD,CSV_SURF_ID_IN)
         CALL Q1NP_EXPORT_BULK_NODES_CSV(NUMELQ1NP_OUT, NUMNOD, &
-     &      KQ1NP_TAB,IQ1NP_BULK_TAB,X)
+     &      KQ1NP_TAB,IQ1NP_BULK_TAB,X,CSV_SURF_ID_IN)
       ENDIF
 
-  !C     Inform Q1NP_RESTART_MOD of total control-point buffer length (for restart I/O)
-      CALL SET_Q1NP_TABVINT_LEN(OFFSET_CTRL-1)
+  !C     Inform Q1NP_RESTART_MOD of total control-point buffer length (for restart I/O).
+  !C     In multi-surface prototype mode, GENQ1NP may be called multiple times with
+  !C     sliced IQ1NP_TAB arrays; therefore only ever increase TABVINT_LEN_G.
+      IF (TABVINT_LEN_G < OFFSET_CTRL-1) THEN
+        CALL SET_Q1NP_TABVINT_LEN(OFFSET_CTRL-1)
+      END IF
 
   !C=======================================================================
   !C   Print Q1Np element information
@@ -668,8 +650,6 @@
         WRITE(IOUT,305)
       ENDIF
 
- 100  FORMAT(A,I0,A,F10.2,A,F10.2,A,F10.2,A)
- 101  FORMAT(A,I0,A,I0,A,I0,A,F10.2,A,F10.2,A,F10.2,A)
  300  FORMAT(/' Q1NP ENRICHED ELEMENTS'/ &
      &        ' ----------------------'/ &
      &        ' Generated from surface definition')
@@ -692,6 +672,8 @@
       IF (ALLOCATED(SEG_J)) DEALLOCATE(SEG_J)
       IF (ALLOCATED(GRID_NODE)) DEALLOCATE(GRID_NODE)
       IF (ALLOCATED(GRID_TO_SEG)) DEALLOCATE(GRID_TO_SEG)
+      IF (ALLOCATED(U_KNOT_GEN)) DEALLOCATE(U_KNOT_GEN)
+      IF (ALLOCATED(V_KNOT_GEN)) DEALLOCATE(V_KNOT_GEN)
       RETURN
         end subroutine genq1np
 !C
@@ -701,7 +683,8 @@
            SUBROUTINE Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD,    &
      &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,           &
-     &     IDEBUG_IN, ICP_METHOD_IN, DIV_IN, WEIGHT_IN )
+     &     ICP_METHOD_IN, DIV_IN, WEIGHT_IN,           &
+     &     CSV_SURF_ID_IN )
 
         USE precision_mod,   ONLY : WP
         USE constant_mod,    ONLY : ZERO, ONE, HALF, TWO
@@ -716,8 +699,9 @@
         REAL(WP), INTENT(IN) :: X(3,NUMNOD)
         REAL(WP), INTENT(IN) :: Q1NP_KTAB(:)
         INTEGER, INTENT(IN) :: CP_MAP(:,:)
-        INTEGER, INTENT(IN) :: IDEBUG_IN, ICP_METHOD_IN, DIV_IN
+        INTEGER, INTENT(IN) :: ICP_METHOD_IN, DIV_IN
         REAL(WP), INTENT(IN) :: WEIGHT_IN
+        INTEGER, INTENT(IN) :: CSV_SURF_ID_IN
         REAL(WP), INTENT(INOUT) :: Q1NP_CPTAB(3,NCP)
 
         ! Local arrays
@@ -807,7 +791,8 @@
   !C   Optional: export original surface nodes to CSV (for visualization/debug)
   !C=======================================================================
       IF (q1np_export_csv) THEN
-        CALL Q1NP_EXPORT_SURFACE_NODES_CSV(NX,NY,X_GRID,GRID_NODE_RES)
+        CALL Q1NP_EXPORT_SURFACE_NODES_CSV(NX,NY,X_GRID,GRID_NODE_RES, &
+     &      CSV_SURF_ID_IN)
       ENDIF
 
   !C     Fill DATA_PT with grid node coordinates; U_PARAM, V_PARAM = parametric (u,v) in [0,1]
@@ -871,10 +856,6 @@
   !C     The loops below form ATA and ATD by summing over all sampled points, evaluating how much each basis function is
   !C     present at each point (A_ROW), and weighting appropriately by the data's coordinates.
   !C     ------------------------------------------------------------------
-        IF (IDEBUG_IN > 0) THEN
-          WRITE(*,*) ''
-          WRITE(*,*) 'Q1NP DEBUG: FITTING METHOD 0 - plain least-squares (subdivision points)'
-        ENDIF
   !C     Fill DATA_PT with subdivision points (bilinear interpolation in each quad)
         do j = 1, ny
           do i = 1, nx
@@ -908,18 +889,6 @@
             ENDDO
           ENDDO
         ENDDO
-
-        IF (IDEBUG_IN > 1) THEN
-          WRITE(*,*) ''
-          WRITE(*,*) 'Q1NP DEBUG: after filling data points, DIV = ', DIV_IN
-          WRITE(*,'(A)') ' DATAPOINT            X        Y        Z        U       V'
-          DO I = 1, NDATA
-            WRITE(*,'(A,I4,A,2X,F7.2,2X,F7.2,2X,F7.2,2X,F7.2,2X,F7.2)') &
-     &      'Q1NP pt(', I, '): ', &
-     &      DATA_PT(1,I), DATA_PT(2,I), DATA_PT(3,I), &
-     &      U_PARAM(I), V_PARAM(I)
-          ENDDO
-        ENDIF
 
   !C     Initialize ATA and ATD
       DO COL1=1,NCP
@@ -978,10 +947,6 @@
   !C   Lambda is chosen from a log-spaced set to minimize RMS fit error.
   !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
        ELSE IF (ICP_METHOD_IN  .EQ. 1) THEN
-        IF (IDEBUG_IN > 0) THEN
-          WRITE(*,*) ''
-          WRITE(*,*) 'Q1NP DEBUG: FITTING METHOD 1 - Tikhonov-regularized least-squares'
-        ENDIF
 
   !C       Allocate regularization arrays: L_REG (second-diff), LTL = L^T*L, ATA_REG, C_CP_BEST, TMPVEC
         ALLOCATE(L_REG(NCP,NCP),LTL(NCP,NCP),ATA_REG(NCP,NCP), &
@@ -1120,11 +1085,6 @@
           Q1NP_CPTAB(2,CP_COUNTER) = C_CP_BEST(CP_COUNTER,2)
           Q1NP_CPTAB(3,CP_COUNTER) = C_CP_BEST(CP_COUNTER,3)
         ENDDO
-        IF (IDEBUG_IN > 0) THEN
-          WRITE(*,'(A,1PE12.5,A,1PE12.5)') &
-     &    'Q1NP DEBUG: method 1 best lambda=', LAMBDA_BEST, &
-     &    ' best RMS=', BEST_RMS
-        END IF
         DEALLOCATE(L_REG,LTL,ATA_REG,C_CP_BEST,TMPVEC)
       ENDIF
 
@@ -1228,9 +1188,161 @@
 
         DEALLOCATE(U_KNOT, V_KNOT, A_ROW)
         RETURN
- 306    FORMAT(' Q1NP top-surface fit error: RMS=',1PE12.5, &
+  306    FORMAT(' Q1NP top-surface fit error: RMS=',1PE12.5, &
      &         ' MAX=',1PE12.5,' at node ',I10,' grid(',I4,',',I4,')')
       END SUBROUTINE Q1NP_REPORT_FIT_ERROR
+!C
+!C=======================================================================
+!C   Rebuild the bottom bulk face from the parent HEX8 and fitted top patch.
+!C   This keeps starter-side bulk connectivity consistent for both single-
+!C   and multi-surface smoothing setups.
+!C=======================================================================
+      SUBROUTINE Q1NP_REBUILD_BULK_FROM_HEX_GEOM(I_ELEM, J_ELEM, P_ELEM, Q_ELEM, NCP_U, NCP_V, &
+     &     NCP, NUMNOD, NIXS, NUMELS, CP_MAP, IFLIP, U_KNOT, V_KNOT, Q1NP_CPTAB, X, IXS, &
+     &     IEL_HEX8, NODES_BULK_OUT, MATCH_SCORE_OUT, IERR)
+  !C-----------------------------------------------
+  !C   M o d u l e s
+  !C-----------------------------------------------
+        USE precision_mod, ONLY : WP
+        USE constant_mod, ONLY : ZERO, ONE
+        IMPLICIT NONE
+  !C-----------------------------------------------
+  !C   D u m m y   A r g u m e n t s
+  !C-----------------------------------------------
+        INTEGER, INTENT(IN) :: I_ELEM, J_ELEM, P_ELEM, Q_ELEM
+        INTEGER, INTENT(IN) :: NCP_U, NCP_V, NCP, NUMNOD, NIXS, NUMELS, IEL_HEX8
+        INTEGER, INTENT(IN) :: CP_MAP(:,:), IFLIP, IXS(NIXS,NUMELS)
+        INTEGER, INTENT(OUT) :: NODES_BULK_OUT(4)
+        REAL(WP), INTENT(IN) :: U_KNOT(:), V_KNOT(:), Q1NP_CPTAB(3,NCP), X(3,NUMNOD)
+        REAL(WP), INTENT(OUT) :: MATCH_SCORE_OUT
+        INTEGER, INTENT(OUT) :: IERR
+  !C-----------------------------------------------
+  !C   L o c a l   V a r i a b l e s
+  !C-----------------------------------------------
+        INTEGER :: FACE_IXS(4,6), OPPOSITE(6), OPP_PAIR(4,6), CORNER_PERM(4,8)
+        INTEGER :: NCTRL_ELEM, CP_ID, IDX, II, JJ, IFACE, IFOPP, IPERM, K, JCORNER
+        INTEGER :: NODES_FACE(4), NODES_OPP(4), CANDIDATE_BULK(4)
+        REAL(WP) :: TOP_CP(3,(P_ELEM+1)*(Q_ELEM+1))
+        REAL(WP) :: TOP_CORNER(3,4), DIFF(3), SCORE_LOCAL, BEST_SCORE
+        DATA FACE_IXS / &
+     &      2,3,4,5, 6,7,8,9, 2,3,7,6, 3,4,8,7, 4,5,9,8, 5,2,6,9 /
+        DATA OPPOSITE / 2,1,5,6,3,4 /
+        DATA OPP_PAIR / &
+     &      1,2,3,4, 1,2,3,4, 2,1,4,3, 2,1,4,3, 2,1,4,3, 2,1,4,3 /
+        DATA CORNER_PERM / &
+     &      1,2,3,4, &
+     &      2,3,4,1, &
+     &      3,4,1,2, &
+     &      4,1,2,3, &
+     &      1,4,3,2, &
+     &      4,3,2,1, &
+     &      3,2,1,4, &
+     &      2,1,4,3 /
+
+        NODES_BULK_OUT = 0
+        MATCH_SCORE_OUT = HUGE(ONE)
+        IERR = 1
+        IF (IEL_HEX8 <= 0 .OR. IEL_HEX8 > NUMELS) RETURN
+
+        NCTRL_ELEM = (P_ELEM + 1) * (Q_ELEM + 1)
+        IDX = 1
+        DO JJ = 0, Q_ELEM
+          DO II = 0, P_ELEM
+            CP_ID = Q1NP_CP_MAP_LOOKUP(I_ELEM + II, J_ELEM + JJ, NCP_U, NCP_V, CP_MAP, IFLIP)
+            IF (CP_ID <= 0 .OR. CP_ID > NCP) THEN
+              IERR = 2
+              RETURN
+            ENDIF
+            TOP_CP(1:3,IDX) = Q1NP_CPTAB(1:3,CP_ID)
+            IDX = IDX + 1
+          ENDDO
+        ENDDO
+
+        CALL Q1NP_EVAL_TOP_PATCH_POINT(P_ELEM, Q_ELEM, U_KNOT, V_KNOT, I_ELEM-1, J_ELEM-1, &
+     &       TOP_CP, -ONE, -ONE, TOP_CORNER(1:3,1))
+        CALL Q1NP_EVAL_TOP_PATCH_POINT(P_ELEM, Q_ELEM, U_KNOT, V_KNOT, I_ELEM-1, J_ELEM-1, &
+     &       TOP_CP,  ONE, -ONE, TOP_CORNER(1:3,2))
+        CALL Q1NP_EVAL_TOP_PATCH_POINT(P_ELEM, Q_ELEM, U_KNOT, V_KNOT, I_ELEM-1, J_ELEM-1, &
+     &       TOP_CP,  ONE,  ONE, TOP_CORNER(1:3,3))
+        CALL Q1NP_EVAL_TOP_PATCH_POINT(P_ELEM, Q_ELEM, U_KNOT, V_KNOT, I_ELEM-1, J_ELEM-1, &
+     &       TOP_CP, -ONE,  ONE, TOP_CORNER(1:3,4))
+
+        BEST_SCORE = HUGE(ONE)
+        DO IFACE = 1, 6
+          IFOPP = OPPOSITE(IFACE)
+          DO K = 1, 4
+            NODES_FACE(K) = IXS(FACE_IXS(K,IFACE), IEL_HEX8)
+            NODES_OPP(K) = IXS(FACE_IXS(K,IFOPP), IEL_HEX8)
+          ENDDO
+
+          IF (MINVAL(NODES_FACE) <= 0 .OR. MAXVAL(NODES_FACE) > NUMNOD) CYCLE
+          IF (MINVAL(NODES_OPP) <= 0 .OR. MAXVAL(NODES_OPP) > NUMNOD) CYCLE
+
+          DO IPERM = 1, 8
+            SCORE_LOCAL = ZERO
+            DO K = 1, 4
+              JCORNER = CORNER_PERM(K,IPERM)
+              DIFF(1:3) = TOP_CORNER(1:3,K) - X(1:3,NODES_FACE(JCORNER))
+              SCORE_LOCAL = SCORE_LOCAL + DOT_PRODUCT(DIFF, DIFF)
+              CANDIDATE_BULK(K) = NODES_OPP(OPP_PAIR(JCORNER,IFACE))
+            ENDDO
+
+            IF (SCORE_LOCAL < BEST_SCORE) THEN
+              BEST_SCORE = SCORE_LOCAL
+              NODES_BULK_OUT(1:4) = CANDIDATE_BULK(1:4)
+            ENDIF
+          ENDDO
+        ENDDO
+
+        IF (MINVAL(NODES_BULK_OUT) <= 0 .OR. MAXVAL(NODES_BULK_OUT) > NUMNOD) THEN
+          IERR = 3
+          RETURN
+        ENDIF
+
+        MATCH_SCORE_OUT = BEST_SCORE
+        IERR = 0
+      END SUBROUTINE Q1NP_REBUILD_BULK_FROM_HEX_GEOM
+!C
+!C=======================================================================
+!C   Evaluate one fitted top-surface point on the current parametric cell.
+!C=======================================================================
+      SUBROUTINE Q1NP_EVAL_TOP_PATCH_POINT(P_ELEM, Q_ELEM, U_KNOT, V_KNOT, ELEM_U, ELEM_V, &
+     &     TOP_CP, XI, ETA, XYZ_OUT)
+  !C-----------------------------------------------
+  !C   M o d u l e s
+  !C-----------------------------------------------
+        USE precision_mod, ONLY : WP
+        USE constant_mod, ONLY : ZERO, ONE
+        USE q1np_geom_mod, ONLY : q1np_shape_functions
+        IMPLICIT NONE
+  !C-----------------------------------------------
+  !C   D u m m y   A r g u m e n t s
+  !C-----------------------------------------------
+        INTEGER, INTENT(IN) :: P_ELEM, Q_ELEM, ELEM_U, ELEM_V
+        REAL(WP), INTENT(IN) :: U_KNOT(:), V_KNOT(:)
+        REAL(WP), INTENT(IN) :: TOP_CP(3,(P_ELEM+1)*(Q_ELEM+1))
+        REAL(WP), INTENT(IN) :: XI, ETA
+        REAL(WP), INTENT(OUT) :: XYZ_OUT(3)
+  !C-----------------------------------------------
+  !C   L o c a l   V a r i a b l e s
+  !C-----------------------------------------------
+        INTEGER :: NCTRL_ELEM, NNODE_ELEM, K
+        REAL(WP) :: N_LOCAL((P_ELEM+1)*(Q_ELEM+1) + 4)
+        REAL(WP) :: DN_LOCAL((P_ELEM+1)*(Q_ELEM+1) + 4,3)
+
+        NCTRL_ELEM = (P_ELEM + 1) * (Q_ELEM + 1)
+        NNODE_ELEM = NCTRL_ELEM + 4
+        N_LOCAL = ZERO
+        DN_LOCAL = ZERO
+
+        CALL Q1NP_SHAPE_FUNCTIONS(XI, ETA, ONE, P_ELEM, Q_ELEM, U_KNOT, V_KNOT, ELEM_U, ELEM_V, &
+     &       N_LOCAL(1:NNODE_ELEM), DN_LOCAL(1:NNODE_ELEM,1:3))
+
+        XYZ_OUT = ZERO
+        DO K = 1, NCTRL_ELEM
+          XYZ_OUT(1:3) = XYZ_OUT(1:3) + N_LOCAL(K) * TOP_CP(1:3,K)
+        ENDDO
+      END SUBROUTINE Q1NP_EVAL_TOP_PATCH_POINT
 !C
 !C=======================================================================
 !C   Q1NP_CP_MAP_LOOKUP:
@@ -1268,12 +1380,13 @@
 !C   the best consistent top-vs-bulk orientation over all active patches.
 !C=======================================================================
       SUBROUTINE Q1NP_SELECT_GLOBAL_CP_ORIENTATION(NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
-     &     CP_MAP, Q1NP_CPTAB, GRID_NODE, GRID_TO_SEG, IXS, NIXS, NUMELS, X, IOUT)
+     &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, NIXS, NUMELS, X, IOUT)
   !C-----------------------------------------------
   !C   M o d u l e s
   !C-----------------------------------------------
         USE precision_mod, ONLY : WP
         USE constant_mod, ONLY : ZERO, ONE
+        USE q1np_geom_mod, ONLY : q1np_get_knot_vectors
         IMPLICIT NONE
   !C-----------------------------------------------
   !C   D u m m y   A r g u m e n t s
@@ -1281,11 +1394,12 @@
         INTEGER, INTENT(IN) :: NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, NIXS, NUMELS, IOUT
         INTEGER, INTENT(INOUT) :: CP_MAP(:,:)
         INTEGER, INTENT(IN) :: GRID_NODE(NX+1,NY+1), GRID_TO_SEG(NX,NY), IXS(NIXS,NUMELS)
-        REAL(KIND=WP), INTENT(IN) :: Q1NP_CPTAB(3,NCP), X(3,NUMNOD)
+        REAL(KIND=WP), INTENT(IN) :: Q1NP_CPTAB(3,NCP), Q1NP_KTAB(:), X(3,NUMNOD)
   !C-----------------------------------------------
   !C   L o c a l   V a r i a b l e s
   !C-----------------------------------------------
         INTEGER :: I, J, K, IFLIP, BEST_FLIP, IEL_HEX8
+        INTEGER :: NKNOT_U, NKNOT_V, IERR_BULK
         INTEGER :: NODES_SURF(4), NODES_BULK(4), CP_CORNER(4)
         INTEGER, ALLOCATABLE :: CP_MAP_TMP(:,:)
         LOGICAL :: VALID, FOUND_VALID
@@ -1293,13 +1407,18 @@
         REAL(KIND=WP) :: UTOP(3), VTOP(3), UBOT(3), VBOT(3)
         REAL(KIND=WP) :: NTOP(3), NBOT(3), DENOM
         REAL(KIND=WP) :: TOP_MAG, BOT_MAG, TOP_BOT_DOT
-        REAL(KIND=WP) :: SCORE, BEST_SCORE, COS_SUM, BEST_COS_SUM
+        REAL(KIND=WP) :: SCORE, BEST_SCORE, COS_SUM, BEST_COS_SUM, BULK_MATCH_SCORE
         REAL(KIND=WP), PARAMETER :: ORIENT_TOL = 1.0E-12_WP
+        REAL(KIND=WP), ALLOCATABLE :: U_KNOT(:), V_KNOT(:)
 
         BEST_FLIP = 0
         FOUND_VALID = .FALSE.
         BEST_SCORE = HUGE(ONE)
         BEST_COS_SUM = -HUGE(ONE)
+        NKNOT_U = NX + 2*P + 1
+        NKNOT_V = NY + 2*Q + 1
+        ALLOCATE(U_KNOT(NKNOT_U), V_KNOT(NKNOT_V))
+        CALL Q1NP_GET_KNOT_VECTORS(NX, NY, P, Q, Q1NP_KTAB, U_KNOT, V_KNOT)
 
         DO IFLIP = 0, 3
           VALID = .TRUE.
@@ -1317,6 +1436,14 @@
 
               CALL findhex8fromsurf(NODES_SURF, IXS, IEL_HEX8, NODES_BULK, NIXS, NUMELS)
               IF (IEL_HEX8 <= 0) THEN
+                VALID = .FALSE.
+                EXIT
+              ENDIF
+
+              CALL Q1NP_REBUILD_BULK_FROM_HEX_GEOM(I, J, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
+     &            NIXS, NUMELS, CP_MAP, IFLIP, U_KNOT, V_KNOT, Q1NP_CPTAB, X, IXS, IEL_HEX8, &
+     &            NODES_BULK, BULK_MATCH_SCORE, IERR_BULK)
+              IF (IERR_BULK /= 0) THEN
                 VALID = .FALSE.
                 EXIT
               ENDIF
@@ -1382,7 +1509,10 @@
           ENDIF
         ENDDO
 
-        IF (.NOT. FOUND_VALID .OR. BEST_FLIP == 0) RETURN
+        IF (.NOT. FOUND_VALID .OR. BEST_FLIP == 0) THEN
+          DEALLOCATE(U_KNOT, V_KNOT)
+          RETURN
+        ENDIF
 
         ALLOCATE(CP_MAP_TMP(SIZE(CP_MAP,1), SIZE(CP_MAP,2)))
         CP_MAP_TMP(:,:) = CP_MAP(:,:)
@@ -1407,6 +1537,7 @@
           WRITE(IOUT,'(A)') '  ** Q1NP: flipped global NURBS orientation in U and V.'
           WRITE(*,'(A)')    '  ** Q1NP: flipped global NURBS orientation in U and V.'
         END SELECT
+        DEALLOCATE(U_KNOT, V_KNOT)
       END SUBROUTINE Q1NP_SELECT_GLOBAL_CP_ORIENTATION
 !C
 !C=======================================================================

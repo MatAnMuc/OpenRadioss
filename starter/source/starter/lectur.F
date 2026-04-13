@@ -857,18 +857,39 @@ C
      .        EXTRA_PER_EL,
      .        S_NOD2ELS_NEW
 
-C     Hardcoded parameters for Q1Np generation from surface, TODO
-C     TODO TRUE OR FALSE FOR SMOOTHING
+C     Hardcoded parameters for Q1Np generation from external /SURF
+C     Prototype: smooth (generate Q1NP for) SURF IDs 100 and 200.
 
-      INTEGER ISURF_ID_TEST
-      PARAMETER (ISURF_ID_TEST=1) !!! Set it a high number to skip smoothing !!!
+      INTEGER, PARAMETER :: SURF_ID_A = 100
+      INTEGER, PARAMETER :: SURF_ID_B = 200
+
+      INTEGER ISURF_ID_A, ISURF_ID_B
       INTEGER P_TEST,Q_TEST
       PARAMETER (P_TEST=2,Q_TEST=2)
+
       INTEGER NSEG_SURF
       INTEGER NX_EST,NY_EST
       INTEGER NCP_U_EST,NCP_V_EST
       INTEGER NKNOT_U_EST,NKNOT_V_EST
       INTEGER IERR_Q1NP_GRID
+
+      INTEGER NSEG_SURF_B
+      INTEGER NX_EST_B,NY_EST_B
+      INTEGER NCP_U_EST_B,NCP_V_EST_B
+      INTEGER NKNOT_U_EST_B,NKNOT_V_EST_B
+      INTEGER IERR_Q1NP_GRID_B
+
+      INTEGER SQ1NPCTRL_SHARED_A, SQ1NPCTRL_SHARED_B
+      INTEGER SQ1NPKNOT_L_A, SQ1NPKNOT_L_B
+      INTEGER SIQ1NP_A, SIQ1NP_B
+      INTEGER SQ1NPBULK_A, SQ1NPBULK_B
+      INTEGER CP_BASE_B
+      INTEGER IQ1NP_CTRL_BASE_B
+      INTEGER IQ1NP_BULK_BASE_B
+      INTEGER Q1NP_KTAB_BASE_B
+
+      INTEGER NUMELQ1NP_A_OUT, NUMELQ1NP_B_OUT
+      INTEGER NX_KNOT_A, NY_KNOT_A, NX_KNOT_B, NY_KNOT_B
       INTEGER NUMNOD_OLD, NUMNOD_EST, NUMNOD_CP_ADDED
       INTEGER SX_OLD, SV_OLD, SD_OLD, SMS_OLD, SIN_OLD, SVR_OLD, SDR_OLD
       INTEGER SX_NEW, SV_NEW, SD_NEW, SMS_NEW, SIN_NEW, SVR_NEW, SDR_NEW
@@ -3780,16 +3801,28 @@ C---
 
 C--------------------------------------------
 C     GENERATE Q1NP ELEMENTS FROM SURFACE (ENRICHED HEX)
-C     Elements generated internally from surface definition
-C     Only smooth surface with internal index = ISURF_ID_TEST (currently 1)
-C     NOTE: This must be called AFTER surfaces are read (HM_READ_SURF)
+C     Elements generated internally from surface definition.
+C     Prototype mode: generate Q1NP for external /SURF IDs 100 and 200.
 C--------------------------------------------
-      
-      IF (NSURF >= ISURF_ID_TEST) THEN
-        NSEG_SURF = IGRSURF(ISURF_ID_TEST)%NSEG
-        IF (NSEG_SURF > 0) THEN
 
-C         Derive grid dimensions from surface topology before sizing Q1NP arrays. 
+      ISURF_ID_A = 0
+      ISURF_ID_B = 0
+      DO I = 1, NSURF
+        IF (IGRSURF(I)%ID == SURF_ID_A) ISURF_ID_A = I
+        IF (IGRSURF(I)%ID == SURF_ID_B) ISURF_ID_B = I
+      END DO
+
+C     Segment counts (used for dual / single-surface prototype branches).
+      NSEG_SURF = 0
+      NSEG_SURF_B = 0
+      IF (ISURF_ID_A > 0) NSEG_SURF = IGRSURF(ISURF_ID_A)%NSEG
+      IF (ISURF_ID_B > 0) NSEG_SURF_B = IGRSURF(ISURF_ID_B)%NSEG
+
+C     Prototype Q1NP: dual surface (100+200), or single surface A or B only.
+      IF (ISURF_ID_A > 0 .AND. ISURF_ID_B > 0 .AND. NSEG_SURF > 0 .AND.
+     .    NSEG_SURF_B > 0) THEN
+
+C         Derive grid dimensions from surface topology (A).
           NX_EST = 0
           NY_EST = 0
           IERR_Q1NP_GRID = 0
@@ -3802,7 +3835,7 @@ C         Derive grid dimensions from surface topology before sizing Q1NP arrays
             ALLOCATE(Q1NP_GRID_NODE_TMP(NSEG_SURF*4, NSEG_SURF*4), STAT=stat)
           ENDIF
           IF (STAT == 0) THEN
-            CALL Q1NP_BUILD_SURF_GRID(IGRSURF(ISURF_ID_TEST), NSEG_SURF,
+            CALL Q1NP_BUILD_SURF_GRID(IGRSURF(ISURF_ID_A), NSEG_SURF,
      .           NX_EST, NY_EST, Q1NP_SEG_I_TMP, Q1NP_SEG_J_TMP,
      .           Q1NP_GRID_NODE_TMP, Q1NP_GRID_TO_SEG_TMP,
      .           IERR_Q1NP_GRID)
@@ -3819,38 +3852,94 @@ C           Conservative fallback to avoid underallocation if the topology
 C           pre-pass fails. GENQ1NP will still do the authoritative check.
             NX_EST = NSEG_SURF
             NY_EST = 1
-            WRITE(IOUT,'(A,I6,A,I6,A)')
-     .        ' Q1NP WARNING: pre-sizing fallback used for surface ',
-     .        ISURF_ID_TEST, ' (grid ierr=', IERR_Q1NP_GRID, ').'
+            WRITE(IOUT,'(A,I6,A,I6,A)') 
+     .        ' Q1NP WARNING: pre-sizing fallback used for SURF_ID_A=',
+     .        ISURF_ID_A, ' (grid ierr=', IERR_Q1NP_GRID, ').'
           ENDIF
 
-C         Number of Q1Np elements = number of surface segments
-          NUMELQ1NP_G = NSEG_SURF
+C         Derive grid dimensions from surface topology (B).
+          NX_EST_B = 0
+          NY_EST_B = 0
+          IERR_Q1NP_GRID_B = 0
+          ALLOCATE(Q1NP_SEG_I_TMP(NSEG_SURF_B), Q1NP_SEG_J_TMP(NSEG_SURF_B),
+     .             STAT=stat)
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_TO_SEG_TMP(NSEG_SURF_B, NSEG_SURF_B), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_NODE_TMP(NSEG_SURF_B*4, NSEG_SURF_B*4), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            CALL Q1NP_BUILD_SURF_GRID(IGRSURF(ISURF_ID_B), NSEG_SURF_B,
+     .           NX_EST_B, NY_EST_B, Q1NP_SEG_I_TMP, Q1NP_SEG_J_TMP,
+     .           Q1NP_GRID_NODE_TMP, Q1NP_GRID_TO_SEG_TMP,
+     .           IERR_Q1NP_GRID_B)
+          ELSE
+            IERR_Q1NP_GRID_B = 7
+          ENDIF
+          IF (ALLOCATED(Q1NP_SEG_I_TMP)) DEALLOCATE(Q1NP_SEG_I_TMP)
+          IF (ALLOCATED(Q1NP_SEG_J_TMP)) DEALLOCATE(Q1NP_SEG_J_TMP)
+          IF (ALLOCATED(Q1NP_GRID_NODE_TMP)) DEALLOCATE(Q1NP_GRID_NODE_TMP)
+          IF (ALLOCATED(Q1NP_GRID_TO_SEG_TMP)) DEALLOCATE(Q1NP_GRID_TO_SEG_TMP)
 
-C         Control points: ncp = ne + p (from Python algorithm)
+          IF (IERR_Q1NP_GRID_B /= 0 .OR. NX_EST_B <= 0 .OR. NY_EST_B <= 0) THEN
+C           Conservative fallback to avoid underallocation if the topology
+C           pre-pass fails. GENQ1NP will still do the authoritative check.
+            NX_EST_B = NSEG_SURF_B
+            NY_EST_B = 1
+            WRITE(IOUT,'(A,I6,A,I6,A)') 
+     .        ' Q1NP WARNING: pre-sizing fallback used for SURF_ID_B=',
+     .        ISURF_ID_B, ' (grid ierr=', IERR_Q1NP_GRID_B, ').'
+          ENDIF
+
+C         Number of Q1Np elements (A+B) = sum of surface segments.
+          NUMELQ1NP_G = NSEG_SURF + NSEG_SURF_B
+
+C         Control points: ncp = ne + p (from Python algorithm).
           NCP_U_EST = NX_EST + P_TEST
           NCP_V_EST = NY_EST + Q_TEST
+          NCP_U_EST_B = NX_EST_B + P_TEST
+          NCP_V_EST_B = NY_EST_B + Q_TEST
+
           MAXQ1NPCTRL = (P_TEST+1)*(Q_TEST+1)
 
-C         Unique control points shared across the grid
-          SQ1NPCTRL_SHARED_G = NCP_U_EST * NCP_V_EST
+C         Unique control points shared across each grid.
+          SQ1NPCTRL_SHARED_A = NCP_U_EST * NCP_V_EST
+          SQ1NPCTRL_SHARED_B = NCP_U_EST_B * NCP_V_EST_B
+          SQ1NPCTRL_SHARED_G = SQ1NPCTRL_SHARED_A + SQ1NPCTRL_SHARED_B
 
-C         Note: ITABM1 will be resized and rebuilt after CP promotion
-C         IQ1NP_TAB now stores only per-element CP connectivity
+C         IQ1NP_TAB stores only per-element CP connectivity.
           SQ1NPCTRL_L_G = NUMELQ1NP_G * MAXQ1NPCTRL
           SIQ1NP_G = SQ1NPCTRL_L_G
 
-C         Separate storage for the legacy 4 bulk nodes per element
-          SQ1NPBULK_G = NBULKQ1NP * NUMELQ1NP_G
+C         Separate storage for the 4 legacy bulk nodes per element.
+          SQ1NPBULK_A = NBULKQ1NP * NSEG_SURF
+          SQ1NPBULK_B = NBULKQ1NP * NSEG_SURF_B
+          SQ1NPBULK_G = SQ1NPBULK_A + SQ1NPBULK_B
 
-C         Weights: one per unique control point
+C         Weights: one per unique control point.
           SQ1NPWEIGHT_L_G = SQ1NPCTRL_SHARED_G
 
-C         Knot vectors: U and V concatenated
+C         Knot vectors: U and V concatenated (per knot set, then appended).
           NKNOT_U_EST = NX_EST + 2*P_TEST + 1
           NKNOT_V_EST = NY_EST + 2*Q_TEST + 1
-          SQ1NPKNOT_L_G = NKNOT_U_EST + NKNOT_V_EST
-          SKQ1NP_G      = NKQ1NP * NUMELQ1NP_G
+          NKNOT_U_EST_B = NX_EST_B + 2*P_TEST + 1
+          NKNOT_V_EST_B = NY_EST_B + 2*Q_TEST + 1
+
+          SQ1NPKNOT_L_A = NKNOT_U_EST + NKNOT_V_EST
+          SQ1NPKNOT_L_B = NKNOT_U_EST_B + NKNOT_V_EST_B
+          SQ1NPKNOT_L_G = SQ1NPKNOT_L_A + SQ1NPKNOT_L_B
+
+          SKQ1NP_G = NKQ1NP * NUMELQ1NP_G
+
+C         Bases for appending surface B results.
+          SIQ1NP_A = NSEG_SURF * MAXQ1NPCTRL
+          SIQ1NP_B = NSEG_SURF_B * MAXQ1NPCTRL
+
+          CP_BASE_B = SQ1NPCTRL_SHARED_A
+          IQ1NP_CTRL_BASE_B = SIQ1NP_A
+          IQ1NP_BULK_BASE_B = SQ1NPBULK_A
+          Q1NP_KTAB_BASE_B = SQ1NPKNOT_L_A
 
           DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
      .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
@@ -3881,7 +3970,7 @@ C         Knot vectors: U and V concatenated
      .                              C1='Q1NP_CPTAB')
           ENDIF
 
-C         Initialize arrays to zero
+C         Initialize arrays to zero.
           KQ1NP_TAB(:,:) = 0
           IF(SIQ1NP_G > 0) IQ1NP_TAB = 0
           IF(SQ1NPBULK_G > 0) IQ1NP_BULK_TAB = 0
@@ -3889,29 +3978,351 @@ C         Initialize arrays to zero
           IF(SQ1NPKNOT_L_G > 0) Q1NP_KTAB = ZERO
           IF(ALLOCATED(Q1NP_CPTAB)) Q1NP_CPTAB = ZERO
 
-C         Generate Q1NP elements from surface
+C         Generate Q1NP elements from surface A (knot_set_id=1).
           CALL GENQ1NP(IGRSURF,IXS,X,IPARTS,
      .                 NSURF,NIXS,NUMNOD,NUMELS,IOUT,
-     .                 KQ1NP_TAB,IQ1NP_TAB,IQ1NP_BULK_TAB,
-     .                 Q1NP_WTAB,Q1NP_KTAB,Q1NP_CPTAB,
-     .                 SQ1NPWEIGHT_L_G,NUMELQ1NP_G)
+     .                 ISURF_ID_A, 1,
+     .                 KQ1NP_TAB, IQ1NP_TAB(1:SIQ1NP_A),
+     .                 IQ1NP_BULK_TAB(1:SQ1NPBULK_A),
+     .                 Q1NP_WTAB(1:SQ1NPCTRL_SHARED_A),
+     .                 Q1NP_KTAB(1:SQ1NPKNOT_L_A),
+     .                 Q1NP_CPTAB(:,1:SQ1NPCTRL_SHARED_A),
+     .                 SQ1NPCTRL_SHARED_A, SURF_ID_A, NUMELQ1NP_A_OUT)
+
+C         Generate Q1NP elements from surface B (knot_set_id=2).
+          CALL GENQ1NP(IGRSURF,IXS,X,IPARTS,
+     .                 NSURF,NIXS,NUMNOD,NUMELS,IOUT,
+     .                 ISURF_ID_B, 2,
+     .                 KQ1NP_TAB(:,NSEG_SURF+1:NUMELQ1NP_G),
+     .                 IQ1NP_TAB(IQ1NP_CTRL_BASE_B+1:IQ1NP_CTRL_BASE_B+SIQ1NP_B),
+     .                 IQ1NP_BULK_TAB(IQ1NP_BULK_BASE_B+1:IQ1NP_BULK_BASE_B+SQ1NPBULK_B),
+     .                 Q1NP_WTAB(CP_BASE_B+1:CP_BASE_B+SQ1NPCTRL_SHARED_B),
+     .                 Q1NP_KTAB(Q1NP_KTAB_BASE_B+1:Q1NP_KTAB_BASE_B+SQ1NPKNOT_L_B),
+     .                 Q1NP_CPTAB(:,CP_BASE_B+1:CP_BASE_B+SQ1NPCTRL_SHARED_B),
+     .                 SQ1NPCTRL_SHARED_B, SURF_ID_B, NUMELQ1NP_B_OUT)
+
+C         Shift control-point IDs in IQ1NP_TAB for appended surface B.
+          DO I = IQ1NP_CTRL_BASE_B+1, IQ1NP_CTRL_BASE_B+SIQ1NP_B
+            IF (IQ1NP_TAB(I) > 0) IQ1NP_TAB(I) = IQ1NP_TAB(I) + CP_BASE_B
+          END DO
+
+C         Fix IQ1NP_TAB and IQ1NP_BULK_TAB offsets stored in KQ1NP_TAB for surface B.
+          DO IEL = NSEG_SURF+1, NUMELQ1NP_G
+            KQ1NP_TAB(4,IEL)  = KQ1NP_TAB(4,IEL)  + IQ1NP_CTRL_BASE_B
+            KQ1NP_TAB(14,IEL) = KQ1NP_TAB(14,IEL) + IQ1NP_BULK_BASE_B
+          END DO
 
           IF (q1np_export_csv) THEN
+C         Export classical bricks with Q1NP replacements omitted.
+C         Do it per surface to keep output files distinct.
             CALL Q1NP_EXPORT_HEX8_CSV(NUMELS,NIXS,IXS,X,NUMNOD,
-     .                                NUMELQ1NP_G,KQ1NP_TAB,NKQ1NP)
+     .                                NUMELQ1NP_A_OUT,
+     .                                KQ1NP_TAB(:,1:NUMELQ1NP_A_OUT), NKQ1NP,
+     .                                SURF_ID_A)
+
+            CALL Q1NP_EXPORT_HEX8_CSV(NUMELS,NIXS,IXS,X,NUMNOD,
+     .                                NUMELQ1NP_B_OUT,
+     .                                KQ1NP_TAB(:,NSEG_SURF+1:NSEG_SURF+NUMELQ1NP_B_OUT),
+     .                                NKQ1NP, SURF_ID_B)
+          ENDIF
+
+          NX_KNOT_A = NX_EST
+          NY_KNOT_A = NY_EST
+          NX_KNOT_B = NX_EST_B
+          NY_KNOT_B = NY_EST_B
+          IF (NUMELQ1NP_A_OUT > 0 .AND. KQ1NP_TAB(12,1) > 0 .AND.
+     .        KQ1NP_TAB(13,1) > 0) THEN
+            NX_KNOT_A = KQ1NP_TAB(12,1)
+            NY_KNOT_A = KQ1NP_TAB(13,1)
+          ENDIF
+          IF (NUMELQ1NP_B_OUT > 0 .AND. NSEG_SURF+1 <= NUMELQ1NP_G .AND.
+     .        KQ1NP_TAB(12,NSEG_SURF+1) > 0 .AND.
+     .        KQ1NP_TAB(13,NSEG_SURF+1) > 0) THEN
+            NX_KNOT_B = KQ1NP_TAB(12,NSEG_SURF+1)
+            NY_KNOT_B = KQ1NP_TAB(13,NSEG_SURF+1)
           ENDIF
 
 C         Store Q1NP_KTAB pointer and grid dimensions in Q1NP_RESTART_MOD
+C         (legacy single-grid view; full per-element hetero support is handled
+C         in later refactors).
           Q1NP_KTAB_G => Q1NP_KTAB
-          Q1NP_NX_G = NX_EST
-          Q1NP_NY_G = NY_EST
+          CALL SET_Q1NP_KNOT_SETS(2, (/NX_KNOT_A, NX_KNOT_B/),
+     .                              (/NY_KNOT_A, NY_KNOT_B/),
+     .                              (/1, SQ1NPKNOT_L_A+1/), (/SQ1NPKNOT_L_A, SQ1NPKNOT_L_B/))
 
           CALL SET_Q1NP_COUNTS(NUMELQ1NP_G,SKQ1NP_G,SIQ1NP_G,
      .                         SQ1NPBULK_G,SQ1NPCTRL_SHARED_G,
      .                         SQ1NPCTRL_L_G,SQ1NPWEIGHT_L_G,
      .                         SQ1NPKNOT_L_G)
-          
-C         Define Gauss scheme for Q1Np elements
+
+C         SSURFTAG bounds checks use TABVINT_LEN_G for IQ1NP_TAB indexing.
+C         In the multi-surface prototype, GENQ1NP is called on slices, so set
+C         TABVINT_LEN_G explicitly to the total allocated IQ1NP_TAB length.
+          CALL SET_Q1NP_TABVINT_LEN(SIQ1NP_G)
+
+      ELSE IF (ISURF_ID_A > 0 .AND. NSEG_SURF > 0) THEN
+
+C         Single surface A only (B missing or has no segments).
+          NX_EST = 0
+          NY_EST = 0
+          IERR_Q1NP_GRID = 0
+          ALLOCATE(Q1NP_SEG_I_TMP(NSEG_SURF), Q1NP_SEG_J_TMP(NSEG_SURF),
+     .             STAT=stat)
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_TO_SEG_TMP(NSEG_SURF, NSEG_SURF), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_NODE_TMP(NSEG_SURF*4, NSEG_SURF*4), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            CALL Q1NP_BUILD_SURF_GRID(IGRSURF(ISURF_ID_A), NSEG_SURF,
+     .           NX_EST, NY_EST, Q1NP_SEG_I_TMP, Q1NP_SEG_J_TMP,
+     .           Q1NP_GRID_NODE_TMP, Q1NP_GRID_TO_SEG_TMP,
+     .           IERR_Q1NP_GRID)
+          ELSE
+            IERR_Q1NP_GRID = 7
+          ENDIF
+          IF (ALLOCATED(Q1NP_SEG_I_TMP)) DEALLOCATE(Q1NP_SEG_I_TMP)
+          IF (ALLOCATED(Q1NP_SEG_J_TMP)) DEALLOCATE(Q1NP_SEG_J_TMP)
+          IF (ALLOCATED(Q1NP_GRID_NODE_TMP)) DEALLOCATE(Q1NP_GRID_NODE_TMP)
+          IF (ALLOCATED(Q1NP_GRID_TO_SEG_TMP)) DEALLOCATE(Q1NP_GRID_TO_SEG_TMP)
+
+          IF (IERR_Q1NP_GRID /= 0 .OR. NX_EST <= 0 .OR. NY_EST <= 0) THEN
+            NX_EST = NSEG_SURF
+            NY_EST = 1
+            WRITE(IOUT,'(A,I6,A,I6,A)')
+     .        ' Q1NP WARNING: pre-sizing fallback used for SURF_ID_A=',
+     .        ISURF_ID_A, ' (grid ierr=', IERR_Q1NP_GRID, ').'
+          ENDIF
+
+          MAXQ1NPCTRL = (P_TEST+1)*(Q_TEST+1)
+          NUMELQ1NP_G = NSEG_SURF
+
+          NCP_U_EST = NX_EST + P_TEST
+          NCP_V_EST = NY_EST + Q_TEST
+
+          SQ1NPCTRL_SHARED_G = NCP_U_EST * NCP_V_EST
+          SQ1NPCTRL_L_G = NUMELQ1NP_G * MAXQ1NPCTRL
+          SIQ1NP_G = SQ1NPCTRL_L_G
+
+          SQ1NPBULK_G = NBULKQ1NP * NSEG_SURF
+          SQ1NPWEIGHT_L_G = SQ1NPCTRL_SHARED_G
+
+          NKNOT_U_EST = NX_EST + 2*P_TEST + 1
+          NKNOT_V_EST = NY_EST + 2*Q_TEST + 1
+          SQ1NPKNOT_L_G = NKNOT_U_EST + NKNOT_V_EST
+
+          SKQ1NP_G = NKQ1NP * NUMELQ1NP_G
+
+          DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
+     .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
+          ALLOCATE(KQ1NP_TAB(NKQ1NP,NUMELQ1NP_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='KQ1NP_TAB')
+          ALLOCATE(IQ1NP_TAB(SIQ1NP_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='IQ1NP_TAB')
+          ALLOCATE(IQ1NP_BULK_TAB(SQ1NPBULK_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='IQ1NP_BULK_TAB')
+          ALLOCATE(Q1NP_WTAB(SQ1NPWEIGHT_L_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='Q1NP_WTAB')
+          ALLOCATE(Q1NP_KTAB(SQ1NPKNOT_L_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='Q1NP_KTAB')
+          IF(SQ1NPCTRL_SHARED_G > 0) THEN
+            ALLOCATE(Q1NP_CPTAB(3,SQ1NPCTRL_SHARED_G) ,STAT=stat)
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                              MSGTYPE=MSGERROR,
+     .                              C1='Q1NP_CPTAB')
+          ENDIF
+
+          KQ1NP_TAB(:,:) = 0
+          IF(SIQ1NP_G > 0) IQ1NP_TAB = 0
+          IF(SQ1NPBULK_G > 0) IQ1NP_BULK_TAB = 0
+          IF(SQ1NPWEIGHT_L_G > 0) Q1NP_WTAB = ZERO
+          IF(SQ1NPKNOT_L_G > 0) Q1NP_KTAB = ZERO
+          IF(ALLOCATED(Q1NP_CPTAB)) Q1NP_CPTAB = ZERO
+
+          CALL GENQ1NP(IGRSURF,IXS,X,IPARTS,
+     .                 NSURF,NIXS,NUMNOD,NUMELS,IOUT,
+     .                 ISURF_ID_A, 1,
+     .                 KQ1NP_TAB, IQ1NP_TAB,
+     .                 IQ1NP_BULK_TAB,
+     .                 Q1NP_WTAB,
+     .                 Q1NP_KTAB,
+     .                 Q1NP_CPTAB,
+     .                 SQ1NPCTRL_SHARED_G, SURF_ID_A, NUMELQ1NP_A_OUT)
+
+          IF (q1np_export_csv) THEN
+            CALL Q1NP_EXPORT_HEX8_CSV(NUMELS,NIXS,IXS,X,NUMNOD,
+     .                                NUMELQ1NP_A_OUT,
+     .                                KQ1NP_TAB(:,1:NUMELQ1NP_A_OUT), NKQ1NP,
+     .                                SURF_ID_A)
+          ENDIF
+
+          NX_KNOT_A = NX_EST
+          NY_KNOT_A = NY_EST
+          IF (NUMELQ1NP_A_OUT > 0 .AND. KQ1NP_TAB(12,1) > 0 .AND.
+     .        KQ1NP_TAB(13,1) > 0) THEN
+            NX_KNOT_A = KQ1NP_TAB(12,1)
+            NY_KNOT_A = KQ1NP_TAB(13,1)
+          ENDIF
+
+          Q1NP_KTAB_G => Q1NP_KTAB
+          CALL SET_Q1NP_KNOT_SETS(1, (/NX_KNOT_A/), (/NY_KNOT_A/), (/1/),
+     .                            (/SQ1NPKNOT_L_G/))
+
+          CALL SET_Q1NP_COUNTS(NUMELQ1NP_G,SKQ1NP_G,SIQ1NP_G,
+     .                         SQ1NPBULK_G,SQ1NPCTRL_SHARED_G,
+     .                         SQ1NPCTRL_L_G,SQ1NPWEIGHT_L_G,
+     .                         SQ1NPKNOT_L_G)
+
+          CALL SET_Q1NP_TABVINT_LEN(SIQ1NP_G)
+
+      ELSE IF (ISURF_ID_B > 0 .AND. NSEG_SURF_B > 0) THEN
+
+C         Single surface B only (A missing or has no segments).
+          NX_EST_B = 0
+          NY_EST_B = 0
+          IERR_Q1NP_GRID_B = 0
+          ALLOCATE(Q1NP_SEG_I_TMP(NSEG_SURF_B), Q1NP_SEG_J_TMP(NSEG_SURF_B),
+     .             STAT=stat)
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_TO_SEG_TMP(NSEG_SURF_B, NSEG_SURF_B), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            ALLOCATE(Q1NP_GRID_NODE_TMP(NSEG_SURF_B*4, NSEG_SURF_B*4), STAT=stat)
+          ENDIF
+          IF (STAT == 0) THEN
+            CALL Q1NP_BUILD_SURF_GRID(IGRSURF(ISURF_ID_B), NSEG_SURF_B,
+     .           NX_EST_B, NY_EST_B, Q1NP_SEG_I_TMP, Q1NP_SEG_J_TMP,
+     .           Q1NP_GRID_NODE_TMP, Q1NP_GRID_TO_SEG_TMP,
+     .           IERR_Q1NP_GRID_B)
+          ELSE
+            IERR_Q1NP_GRID_B = 7
+          ENDIF
+          IF (ALLOCATED(Q1NP_SEG_I_TMP)) DEALLOCATE(Q1NP_SEG_I_TMP)
+          IF (ALLOCATED(Q1NP_SEG_J_TMP)) DEALLOCATE(Q1NP_SEG_J_TMP)
+          IF (ALLOCATED(Q1NP_GRID_NODE_TMP)) DEALLOCATE(Q1NP_GRID_NODE_TMP)
+          IF (ALLOCATED(Q1NP_GRID_TO_SEG_TMP)) DEALLOCATE(Q1NP_GRID_TO_SEG_TMP)
+
+          IF (IERR_Q1NP_GRID_B /= 0 .OR. NX_EST_B <= 0 .OR. NY_EST_B <= 0) THEN
+            NX_EST_B = NSEG_SURF_B
+            NY_EST_B = 1
+            WRITE(IOUT,'(A,I6,A,I6,A)')
+     .        ' Q1NP WARNING: pre-sizing fallback used for SURF_ID_B=',
+     .        ISURF_ID_B, ' (grid ierr=', IERR_Q1NP_GRID_B, ').'
+          ENDIF
+
+          MAXQ1NPCTRL = (P_TEST+1)*(Q_TEST+1)
+          NUMELQ1NP_G = NSEG_SURF_B
+
+          NCP_U_EST_B = NX_EST_B + P_TEST
+          NCP_V_EST_B = NY_EST_B + Q_TEST
+
+          SQ1NPCTRL_SHARED_G = NCP_U_EST_B * NCP_V_EST_B
+          SQ1NPCTRL_L_G = NUMELQ1NP_G * MAXQ1NPCTRL
+          SIQ1NP_G = SQ1NPCTRL_L_G
+
+          SQ1NPBULK_G = NBULKQ1NP * NSEG_SURF_B
+          SQ1NPWEIGHT_L_G = SQ1NPCTRL_SHARED_G
+
+          NKNOT_U_EST_B = NX_EST_B + 2*P_TEST + 1
+          NKNOT_V_EST_B = NY_EST_B + 2*Q_TEST + 1
+          SQ1NPKNOT_L_G = NKNOT_U_EST_B + NKNOT_V_EST_B
+
+          SKQ1NP_G = NKQ1NP * NUMELQ1NP_G
+
+          DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
+     .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
+          ALLOCATE(KQ1NP_TAB(NKQ1NP,NUMELQ1NP_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='KQ1NP_TAB')
+          ALLOCATE(IQ1NP_TAB(SIQ1NP_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='IQ1NP_TAB')
+          ALLOCATE(IQ1NP_BULK_TAB(SQ1NPBULK_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='IQ1NP_BULK_TAB')
+          ALLOCATE(Q1NP_WTAB(SQ1NPWEIGHT_L_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='Q1NP_WTAB')
+          ALLOCATE(Q1NP_KTAB(SQ1NPKNOT_L_G) ,STAT=stat)
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='Q1NP_KTAB')
+          IF(SQ1NPCTRL_SHARED_G > 0) THEN
+            ALLOCATE(Q1NP_CPTAB(3,SQ1NPCTRL_SHARED_G) ,STAT=stat)
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                              MSGTYPE=MSGERROR,
+     .                              C1='Q1NP_CPTAB')
+          ENDIF
+
+          KQ1NP_TAB(:,:) = 0
+          IF(SIQ1NP_G > 0) IQ1NP_TAB = 0
+          IF(SQ1NPBULK_G > 0) IQ1NP_BULK_TAB = 0
+          IF(SQ1NPWEIGHT_L_G > 0) Q1NP_WTAB = ZERO
+          IF(SQ1NPKNOT_L_G > 0) Q1NP_KTAB = ZERO
+          IF(ALLOCATED(Q1NP_CPTAB)) Q1NP_CPTAB = ZERO
+
+          CALL GENQ1NP(IGRSURF,IXS,X,IPARTS,
+     .                 NSURF,NIXS,NUMNOD,NUMELS,IOUT,
+     .                 ISURF_ID_B, 1,
+     .                 KQ1NP_TAB, IQ1NP_TAB,
+     .                 IQ1NP_BULK_TAB,
+     .                 Q1NP_WTAB,
+     .                 Q1NP_KTAB,
+     .                 Q1NP_CPTAB,
+     .                 SQ1NPCTRL_SHARED_G, SURF_ID_B, NUMELQ1NP_B_OUT)
+
+          IF (q1np_export_csv) THEN
+            CALL Q1NP_EXPORT_HEX8_CSV(NUMELS,NIXS,IXS,X,NUMNOD,
+     .                                NUMELQ1NP_B_OUT,
+     .                                KQ1NP_TAB(:,1:NUMELQ1NP_B_OUT), NKQ1NP,
+     .                                SURF_ID_B)
+          ENDIF
+
+          NX_KNOT_B = NX_EST_B
+          NY_KNOT_B = NY_EST_B
+          IF (NUMELQ1NP_B_OUT > 0 .AND. KQ1NP_TAB(12,1) > 0 .AND.
+     .        KQ1NP_TAB(13,1) > 0) THEN
+            NX_KNOT_B = KQ1NP_TAB(12,1)
+            NY_KNOT_B = KQ1NP_TAB(13,1)
+          ENDIF
+
+          Q1NP_KTAB_G => Q1NP_KTAB
+          CALL SET_Q1NP_KNOT_SETS(1, (/NX_KNOT_B/), (/NY_KNOT_B/), (/1/),
+     .                            (/SQ1NPKNOT_L_G/))
+
+          CALL SET_Q1NP_COUNTS(NUMELQ1NP_G,SKQ1NP_G,SIQ1NP_G,
+     .                         SQ1NPBULK_G,SQ1NPCTRL_SHARED_G,
+     .                         SQ1NPCTRL_L_G,SQ1NPWEIGHT_L_G,
+     .                         SQ1NPKNOT_L_G)
+
+          CALL SET_Q1NP_TABVINT_LEN(SIQ1NP_G)
+
+      ELSE
+        WRITE(IOUT,'(A,I6,A,I6,A,I6,A,I6)')
+     .    ' Q1NP: prototype /SURF IDs 100/200 not usable. ISURF_ID_A=',
+     .    ISURF_ID_A, ' ISURF_ID_B=', ISURF_ID_B,
+     .    ' NSEG_SURF=', NSEG_SURF, ' NSEG_SURF_B=', NSEG_SURF_B
+        CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
+      ENDIF
+
+      IF (NUMELQ1NP_G > 0) THEN
+
+C         Define Gauss scheme for Q1Np elements (P_TEST/Q_TEST fixed in this prototype).
           NP_U_Q1NP = P_TEST + 1
           NP_V_Q1NP = Q_TEST + 1
           NP_T_Q1NP = 2
@@ -4477,13 +4888,9 @@ C-----------------------------------------------------------------------
               IENTRY2(1:NUMNOD) = -1
               FLAGKIN(1:NUMNOD) = 0
             ENDIF
+          ELSE
+            CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
           ENDIF
-        ELSE
-          CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
-        ENDIF
-      ELSE
-        PRINT*, 'Q1NP DEBUG: Surface ID=', ISURF_ID_TEST, ' not found'
-        CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
       ENDIF
 
       NSEGS=NPART
@@ -7059,6 +7466,16 @@ C After IDDLEVEL Finish Indexes - Fill PERMUTATION%SOLID(NUMELS+1,PERMUTATION%SO
            N=PERMUTATION%SOLID(I)
            PERMUTATION%SOLID(NUMELS+N)=I
         ENDDO
+
+        ! Update KQ1NP_TAB(10, IEL) to the new hex element ID
+        IF (NUMELQ1NP_G > 0) THEN
+          DO IEL = 1, NUMELQ1NP_G
+            IEL_HEX8 = KQ1NP_TAB(10, IEL)
+            N = PERMUTATION%SOLID(NUMELS + IEL_HEX8)
+            KQ1NP_TAB(10, IEL) = N
+          ENDDO
+        ENDIF
+        
 !       already done in SGRHEAD / SGRTAILS
 !        CALL APPLYSORT2CLUSTER(CLUSTERS,PERMUTATION%SOLID(NUMELS+1:2*NUMELS))
         CALL APPLYSORT2FLUX(IBFFLUX,GLOB_THERM%NITFLUX,GLOB_THERM%NFXFLUX,PERMUTATION%SOLID(NUMELS+1:2*NUMELS))

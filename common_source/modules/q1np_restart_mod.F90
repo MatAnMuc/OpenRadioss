@@ -41,7 +41,15 @@
 ! 
         INTEGER :: Q1NP_NX_G = 0  ! Number of elements in U direction
         INTEGER :: Q1NP_NY_G = 0  ! Number of elements in V direction
-        REAL(KIND=WP), DIMENSION(:), POINTER :: Q1NP_KTAB_G => NULL()  ! Knot vectors (U then V)
+        ! Knot vectors pool (U then V), concatenated across knot sets.
+        REAL(KIND=WP), DIMENSION(:), POINTER :: Q1NP_KTAB_G => NULL()
+
+        ! Per-knot-set metadata to support heterogeneous NX/NY.
+        INTEGER :: Q1NP_NKNOT_SETS_G = 0
+        INTEGER, ALLOCATABLE :: Q1NP_NX_SET_G(:)      ! NX for each knot set
+        INTEGER, ALLOCATABLE :: Q1NP_NY_SET_G(:)      ! NY for each knot set
+        INTEGER, ALLOCATABLE :: Q1NP_KTAB_OFF_G(:)    ! 1-based start index into Q1NP_KTAB_G
+        INTEGER, ALLOCATABLE :: Q1NP_KTAB_LEN_G(:)    ! number of entries for (U then V)
 
       CONTAINS
 
@@ -62,6 +70,12 @@
           Q1NP_NX_G        = 0
           Q1NP_NY_G        = 0
           Q1NP_KTAB_G      => NULL()
+
+          Q1NP_NKNOT_SETS_G = 0
+          IF (ALLOCATED(Q1NP_NX_SET_G)) DEALLOCATE(Q1NP_NX_SET_G)
+          IF (ALLOCATED(Q1NP_NY_SET_G)) DEALLOCATE(Q1NP_NY_SET_G)
+          IF (ALLOCATED(Q1NP_KTAB_OFF_G)) DEALLOCATE(Q1NP_KTAB_OFF_G)
+          IF (ALLOCATED(Q1NP_KTAB_LEN_G)) DEALLOCATE(Q1NP_KTAB_LEN_G)
           IF (ALLOCATED(Q1NP_GP_U_G)) DEALLOCATE(Q1NP_GP_U_G)
           IF (ALLOCATED(Q1NP_GP_V_G)) DEALLOCATE(Q1NP_GP_V_G)
           IF (ALLOCATED(Q1NP_GP_T_G)) DEALLOCATE(Q1NP_GP_T_G)
@@ -92,6 +106,41 @@
           SQ1NPWEIGHT_L_G    = SQ1NPWEIGHT_L
           SQ1NPKNOT_L_G      = SQ1NPKNOT_L
         END SUBROUTINE SET_Q1NP_COUNTS
+
+        SUBROUTINE SET_Q1NP_KNOT_SETS(NSETS_IN, NX_SET_IN, NY_SET_IN, KTAB_OFF_IN, KTAB_LEN_IN)
+          INTEGER, INTENT(IN) :: NSETS_IN
+          INTEGER, INTENT(IN) :: NX_SET_IN(:)
+          INTEGER, INTENT(IN) :: NY_SET_IN(:)
+          INTEGER, INTENT(IN) :: KTAB_OFF_IN(:)
+          INTEGER, INTENT(IN) :: KTAB_LEN_IN(:)
+
+          INTEGER :: I
+
+          Q1NP_NKNOT_SETS_G = NSETS_IN
+
+          IF (NSETS_IN <= 0) RETURN
+
+          IF (ALLOCATED(Q1NP_NX_SET_G)) DEALLOCATE(Q1NP_NX_SET_G)
+          IF (ALLOCATED(Q1NP_NY_SET_G)) DEALLOCATE(Q1NP_NY_SET_G)
+          IF (ALLOCATED(Q1NP_KTAB_OFF_G)) DEALLOCATE(Q1NP_KTAB_OFF_G)
+          IF (ALLOCATED(Q1NP_KTAB_LEN_G)) DEALLOCATE(Q1NP_KTAB_LEN_G)
+
+          ALLOCATE(Q1NP_NX_SET_G(NSETS_IN))
+          ALLOCATE(Q1NP_NY_SET_G(NSETS_IN))
+          ALLOCATE(Q1NP_KTAB_OFF_G(NSETS_IN))
+          ALLOCATE(Q1NP_KTAB_LEN_G(NSETS_IN))
+
+          DO I = 1, NSETS_IN
+            Q1NP_NX_SET_G(I)   = NX_SET_IN(I)
+            Q1NP_NY_SET_G(I)   = NY_SET_IN(I)
+            Q1NP_KTAB_OFF_G(I) = KTAB_OFF_IN(I)
+            Q1NP_KTAB_LEN_G(I) = KTAB_LEN_IN(I)
+          ENDDO
+
+          ! Keep legacy single-knot-set view as the first set.
+          Q1NP_NX_G = Q1NP_NX_SET_G(1)
+          Q1NP_NY_G = Q1NP_NY_SET_G(1)
+        END SUBROUTINE SET_Q1NP_KNOT_SETS
 
         SUBROUTINE SET_Q1NP_TABVINT_LEN(LEN)
           INTEGER, INTENT(IN) :: LEN

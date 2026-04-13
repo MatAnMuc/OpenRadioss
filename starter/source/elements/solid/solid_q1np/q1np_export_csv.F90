@@ -44,7 +44,8 @@
         subroutine q1np_export_nurbs_csv(ncp_u, ncp_v, max_cp_u, max_cp_v, &
      &                                   q1np_cptab, cp_map, &
      &                                   numelq1np_out, kq1np_tab, &
-     &                                   iq1np_tab, iq1np_bulk_tab, numnod)
+     &                                   iq1np_tab, iq1np_bulk_tab, numnod, &
+     &                                   surface_id)
 ! ----------------------------------------------------------------------------------------------------------------------
 !                                                   Implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
@@ -55,6 +56,7 @@
           integer, intent(in) :: ncp_u, ncp_v, max_cp_u, max_cp_v
           integer, intent(in) :: numelq1np_out
           integer, intent(in) :: numnod
+          integer, intent(in) :: surface_id
           real(kind=WP), intent(in) :: q1np_cptab(:, :)
           integer, intent(in) :: cp_map(max_cp_u, max_cp_v)
           integer, intent(in) :: kq1np_tab(:, :)
@@ -69,13 +71,23 @@
           integer :: max_nctrl
           character(len=2048) :: header
           character(len=32) :: tmp
+          character(len=160) :: file_cp, file_el
 !     Global node ID for control point: same convention as Q1NP_PROMOTE_CP_TO_NODES (NUMNOD + local CP index)
 ! ----------------------------------------------------------------------------------------------------------------------
 !                                                   Body
 ! ----------------------------------------------------------------------------------------------------------------------
+          if (surface_id .le. 0) then
+            file_cp = 'q1np_control_points.csv'
+            file_el = 'q1np_elements.csv'
+          else
+            write(tmp, '(I0)') surface_id
+            file_cp = 'q1np_control_points_'//trim(tmp)//'.csv'
+            file_el = 'q1np_elements_'//trim(tmp)//'.csv'
+          end if
+
 !--- Open control point CSV (node_id = global node ID)
           unit_cp = 987
-          open(unit=unit_cp, file='q1np_control_points.csv', &
+          open(unit=unit_cp, file=file_cp, &
      &         status='UNKNOWN', form='FORMATTED', iostat=ios)
           if (ios .ne. 0) return
           write(unit_cp, '(A)') 'node_id,i_index,j_index,x,y,z'
@@ -98,7 +110,7 @@
 
 !--- Open element CSV (all node IDs global: cp_node_* and bulk_node_*)
           unit_el = 988
-          open(unit=unit_el, file='q1np_elements.csv', &
+          open(unit=unit_el, file=file_el, &
      &         status='UNKNOWN', form='FORMATTED', iostat=ios)
           if (ios .ne. 0) return
 
@@ -159,11 +171,13 @@
 
 !=======================================================================
         subroutine q1np_export_bulk_nodes_csv(numelq1np_out, numnod, &
-     &                                         kq1np_tab, iq1np_bulk_tab, x)
+     &                                         kq1np_tab, iq1np_bulk_tab, x, &
+     &                                         surface_id)
 ! ----------------------------------------------------------------------------------------------------------------------
           implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
           integer, intent(in) :: numelq1np_out, numnod
+          integer, intent(in) :: surface_id
           integer, intent(in) :: kq1np_tab(15, numelq1np_out)
           integer, intent(in) :: iq1np_bulk_tab(:)
           real(kind=WP), intent(in) :: x(3, numnod)
@@ -171,10 +185,8 @@
           integer :: iel, offset_bulk, i, node_id
           integer :: unit_bn, ios
           integer, allocatable :: mark(:)
-          !if (numnod .le. 0) return
-          !if (size(x, 1) < 3) return
-          !if (size(x, 2) < numnod) return
-          !if (size(kq1np_tab, 1) < 14) return
+          character(len=32) :: tmp
+          character(len=160) :: file_bn
 
           allocate(mark(numnod))
           mark = 0
@@ -188,9 +200,16 @@
             end do
           end do
 
+          if (surface_id .le. 0) then
+            file_bn = 'q1np_bulk_nodes.csv'
+          else
+            write(tmp, '(I0)') surface_id
+            file_bn = 'q1np_bulk_nodes_'//trim(tmp)//'.csv'
+          end if
+
 !--- Write CSV with node_id,x,y,z
           unit_bn = 989
-          open(unit=unit_bn, file='q1np_bulk_nodes.csv', &
+          open(unit=unit_bn, file=file_bn, &
      &         status='UNKNOWN', form='FORMATTED', iostat=ios)
           if (ios .ne. 0) then
             deallocate(mark)
@@ -214,20 +233,31 @@
 !   Export original surface nodes before they are replaced by control points.
 !   Caller passes GRID_NODE such that GRID_NODE(1:NX+1,1:NY+1) holds node IDs (0 if missing).
 !=======================================================================
-        subroutine q1np_export_surface_nodes_csv(nx, ny, x_grid, grid_node)
+        subroutine q1np_export_surface_nodes_csv(nx, ny, x_grid, grid_node, &
+     &                                           surface_id)
 ! ----------------------------------------------------------------------------------------------------------------------
           implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
           integer, intent(in) :: nx, ny
+          integer, intent(in) :: surface_id
           real(kind=WP), intent(in) :: x_grid(3, nx+1, ny+1)
           integer, intent(in) :: grid_node((nx+1)*(ny+1))
 ! ----------------------------------------------------------------------------------------------------------------------
           integer :: i, j, k, node_id
           integer :: unit_sn, ios
+          character(len=32) :: tmp
+          character(len=160) :: file_sn
+
+          if (surface_id .le. 0) then
+            file_sn = 'q1np_surface_nodes.csv'
+          else
+            write(tmp, '(I0)') surface_id
+            file_sn = 'q1np_surface_nodes_'//trim(tmp)//'.csv'
+          end if
 
 !--- Write CSV with node_id,grid_i,grid_j,x,y,z (one row per grid position)
           unit_sn = 990
-          open(unit=unit_sn, file='q1np_surface_nodes.csv', &
+          open(unit=unit_sn, file=file_sn, &
      &         status='UNKNOWN', form='FORMATTED', iostat=ios)
           if (ios .ne. 0) then
             return
@@ -287,7 +317,8 @@
 !   IXS index) are omitted so the CSV matches “remaining” classical bricks only.
 !=======================================================================
         subroutine q1np_export_hex8_csv(numels, nixs, ixs, x, numnod, &
-     &                                  numelq1np_in, kq1np_tab, nkq1np)
+     &                                  numelq1np_in, kq1np_tab, nkq1np, &
+     &                                  surface_id_opt)
 ! ----------------------------------------------------------------------------------------------------------------------
           implicit none
 ! ----------------------------------------------------------------------------------------------------------------------
@@ -295,12 +326,15 @@
           integer, intent(in) :: numelq1np_in, nkq1np
           integer, intent(in) :: ixs(nixs, *)
           integer, intent(in) :: kq1np_tab(nkq1np, *)
+          integer, intent(in), optional :: surface_id_opt
           real(kind=WP), intent(in) :: x(3, *)
 ! ----------------------------------------------------------------------------------------------------------------------
           integer :: iel, i, node_id, unit_el, unit_nd, ios, maxnode
           integer :: iq, iel_hex
           integer, allocatable :: mark(:)
           logical, allocatable :: skip_q1np_under(:)
+          character(len=64) :: file_el, file_nd
+          character(len=32) :: suffix
 ! ----------------------------------------------------------------------------------------------------------------------
           allocate(skip_q1np_under(numels))
           skip_q1np_under = .false.
@@ -323,8 +357,15 @@
             end do
           end do
 
+          if (present(surface_id_opt)) then
+            write(suffix,'(I0)') surface_id_opt
+            file_el = 'hex8_elements_'//trim(suffix)//'.csv'
+          else
+            file_el = 'hex8_elements.csv'
+          end if
+
           unit_el = 991
-          open(unit=unit_el, file='hex8_elements.csv', &
+          open(unit=unit_el, file=file_el, &
      &         status='UNKNOWN', form='FORMATTED', iostat=ios)
           if (ios .ne. 0) then
             deallocate(skip_q1np_under)
@@ -347,8 +388,15 @@
           close(unit_el)
 
           if (maxnode .le. 0) then
+            if (present(surface_id_opt)) then
+              write(suffix,'(I0)') surface_id_opt
+              file_nd = 'hex8_nodes_'//trim(suffix)//'.csv'
+            else
+              file_nd = 'hex8_nodes.csv'
+            end if
+
             unit_nd = 992
-            open(unit=unit_nd, file='hex8_nodes.csv', &
+            open(unit=unit_nd, file=file_nd, &
      &           status='UNKNOWN', form='FORMATTED', iostat=ios)
             if (ios .eq. 0) then
               write(unit_nd, '(A)') 'node_id,x,y,z'
@@ -369,8 +417,15 @@
             end do
           end do
 
+          if (present(surface_id_opt)) then
+            write(suffix,'(I0)') surface_id_opt
+            file_nd = 'hex8_nodes_'//trim(suffix)//'.csv'
+          else
+            file_nd = 'hex8_nodes.csv'
+          end if
+
           unit_nd = 992
-          open(unit=unit_nd, file='hex8_nodes.csv', &
+          open(unit=unit_nd, file=file_nd, &
      &         status='UNKNOWN', form='FORMATTED', iostat=ios)
           if (ios .ne. 0) then
             deallocate(mark)
