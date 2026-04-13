@@ -259,24 +259,28 @@ c         solid, quad & SPH cell elements
 c
 c=======================================================================
 
-C Check if this is a Q1NP group
+C Check if this is a Q1NP group 
           IS_Q1NP_GROUP = .FALSE.
           IF (ITY == 1) THEN
             NFT = IPARG(3,NG)
             IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN
               IF (PRESENT(KQ1NP_TAB)) THEN
+                IS_Q1NP_GROUP = .TRUE.
                 DO I = 1, NEL
                   II = NFT + I
                   IS_ELEMENT_Q1NP = .FALSE.
                   IEL_Q1NP_FOUND = 0
                   DO IEL_Q1NP = 1, NUMELQ1NP_G
-                    IF (KQ1NP_TAB(10, IEL_Q1NP) == II) THEN
-                      IS_Q1NP_GROUP = .TRUE.
+                    IF (KQ1NP_TAB(5, IEL_Q1NP) == IXS(NIXS, II)) THEN
                       IS_ELEMENT_Q1NP = .TRUE.
                       IEL_Q1NP_FOUND = IEL_Q1NP
                       EXIT
                     ENDIF
                   ENDDO
+                  IF (.NOT. IS_ELEMENT_Q1NP) THEN
+                    IS_Q1NP_GROUP = .FALSE.
+                    EXIT
+                  ENDIF
                 ENDDO
               ENDIF
             ENDIF

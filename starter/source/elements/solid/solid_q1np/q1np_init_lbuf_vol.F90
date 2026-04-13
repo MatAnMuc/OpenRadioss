@@ -150,6 +150,7 @@
           integer :: elem_u, elem_v
           integer :: n_top, n_total
           integer :: nknot_u, nknot_v
+          integer :: knot_set_id, nx, ny, ktab_off
           integer :: i, iu, iv, it, k
           integer, allocatable :: node_ids(:)
           real(kind=WP) :: xi, eta, zeta, wg, detj, vol_gp
@@ -175,13 +176,29 @@
           allocate(dn_local(n_total, 3))
           allocate(xnode(3, n_total))
 !
-          nknot_u = q1np_nx_g + 2 * p     + 1
-          nknot_v = q1np_ny_g + 2 * q_deg + 1
+          knot_set_id = kq1np_tab(15, iel_q1np)
+          if (q1np_nknot_sets_g > 0 .and. knot_set_id > 0 .and. knot_set_id <= q1np_nknot_sets_g) then
+            nx = q1np_nx_set_g(knot_set_id)
+            ny = q1np_ny_set_g(knot_set_id)
+            ktab_off = q1np_ktab_off_g(knot_set_id)
+          else
+            nx = q1np_nx_g
+            ny = q1np_ny_g
+            ktab_off = 1
+          end if
+
+          nknot_u = nx + 2 * p     + 1
+          nknot_v = ny + 2 * q_deg + 1
           allocate(u_knot(nknot_u))
           allocate(v_knot(nknot_v))
 !
-          call q1np_get_knot_vectors(q1np_nx_g, q1np_ny_g, p, q_deg, &
+          if (ktab_off > 0) then
+            u_knot(:) = q1np_ktab_g(ktab_off : ktab_off + nknot_u - 1)
+            v_knot(:) = q1np_ktab_g(ktab_off + nknot_u : ktab_off + nknot_u + nknot_v - 1)
+          else
+            call q1np_get_knot_vectors(nx, ny, p, q_deg, &
      &         q1np_ktab_g, u_knot, v_knot)
+          end if
 !
           do i = 1, nctrl
             node_ids(i) = iq1np_tab(offset_ctrl + i - 1)

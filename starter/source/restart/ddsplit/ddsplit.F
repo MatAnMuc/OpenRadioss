@@ -2739,12 +2739,8 @@ C--------------------------------------
       IF (NUMELIG3D>0) CALL W_ELIG3D(KXIG3D,NUMELIG3D,ISUMNIG3D_L,IXIG3D,P-1,NODLOCAL,LEN_IA)
 
       IF (NUMELQ1NP_G  > 0) THEN
-C Informational message for Q1Np restart content
-        WRITE(IOUT,'(A,I10,A,I10)') 
-     .    ' ** Q1Np INT arrays: NKQ1NP=', NKQ1NP,
-     .    ' NUMELQ1NP=', NUMELQ1NP_G 
         CALL W_Q1NP_INT(NUMELQ1NP_G ,NKQ1NP,KQ1NP_TAB,
-     .                  IQ1NP_TAB,IQ1NP_BULK_TAB,LEN_IA)
+     .                  IQ1NP_TAB,IQ1NP_BULK_TAB,NODLOCAL,CEL,LEN_IA)
       ENDIF
 C--------------------------------------
 C TAG_SKINS6 : used for /H3D/STRESS/TENS/OUTER

@@ -69,8 +69,7 @@
 !=======================================================================
           if (numelq1np_in == 0) return
 !
-          nx = q1np_nx_g
-          ny = q1np_ny_g
+          ! Knot vectors will be extracted per-knot-set for heterogeneous NX/NY.
 !=======================================================================
 !   Initialize Gauss scheme if not yet done
 !=======================================================================
@@ -80,15 +79,6 @@
      &        q1np_np_t_g <= 0) then
             call q1np_init_gauss_scheme_starter(p + 1, q_deg + 1, 2)
           end if
-!=======================================================================
-!   Extract knot vectors once (shared by all Q1NP elements on one grid)
-!=======================================================================
-          nknot_u = nx + 2*p + 1
-          nknot_v = ny + 2*q_deg + 1
-          allocate(u_knot(nknot_u))
-          allocate(v_knot(nknot_v))
-          call q1np_get_knot_vectors(nx, ny, p, q_deg, &
-     &                               q1np_ktab_g, u_knot, v_knot)
 !=======================================================================
 !   Loop over all Q1NP elements
 !=======================================================================
@@ -107,6 +97,41 @@
             offset_bulk = kq1np_tab(14,iel)
             elem_u      = kq1np_tab(6, iel)
             elem_v      = kq1np_tab(7, iel)
+
+            ! Extract knot vectors for this element's knot set.
+            if (q1np_nknot_sets_g > 0) then
+              igrp = kq1np_tab(15, iel)
+              if (igrp <= 0 .or. igrp > q1np_nknot_sets_g) igrp = 1
+
+              nx = q1np_nx_set_g(igrp)
+              ny = q1np_ny_set_g(igrp)
+
+              nknot_u = nx + 2*p + 1
+              nknot_v = ny + 2*q_deg + 1
+
+              if (allocated(u_knot)) deallocate(u_knot)
+              if (allocated(v_knot)) deallocate(v_knot)
+              allocate(u_knot(nknot_u))
+              allocate(v_knot(nknot_v))
+
+              ! Copy knots from the global concatenated knot-vector pool.
+              u_knot(:) = q1np_ktab_g(q1np_ktab_off_g(igrp) : q1np_ktab_off_g(igrp)+nknot_u-1)
+              v_knot(:) = q1np_ktab_g(q1np_ktab_off_g(igrp)+nknot_u : q1np_ktab_off_g(igrp)+nknot_u+nknot_v-1)
+            else
+              ! Legacy single-knot-set view.
+              nx = q1np_nx_g
+              ny = q1np_ny_g
+
+              nknot_u = nx + 2*p + 1
+              nknot_v = ny + 2*q_deg + 1
+
+              if (allocated(u_knot)) deallocate(u_knot)
+              if (allocated(v_knot)) deallocate(v_knot)
+              allocate(u_knot(nknot_u))
+              allocate(v_knot(nknot_v))
+
+              call q1np_get_knot_vectors(nx, ny, p, q_deg, q1np_ktab_g, u_knot, v_knot)
+            end if
 !
             n_top   = nctrl
             n_total = n_top + 4

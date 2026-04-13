@@ -64,6 +64,7 @@
           integer :: nknot_u, nknot_v
           integer :: i, j, k, iu, iv, it
           integer :: n_top, n_total
+          integer :: knot_set_id, nx_loc, ny_loc, ktab_off
           integer, allocatable :: node_ids(:)
           real(kind=WP) :: xi, eta, zeta, wg
           real(kind=WP), allocatable :: nval(:)
@@ -102,12 +103,23 @@
 !C----------------------------------------------------------------------
 !C   Allocate and extract U,V knot vectors from global Q1NP_KTAB
 !C----------------------------------------------------------------------
-          nknot_u = nx + 2*p + 1
-          nknot_v = ny + 2*q + 1
+          knot_set_id = kq1np_tab(15, iel_q1np)
+          if (q1np_nknot_sets_g > 0 .and. knot_set_id > 0 .and. knot_set_id <= q1np_nknot_sets_g) then
+            nx_loc = q1np_nx_set_g(knot_set_id)
+            ny_loc = q1np_ny_set_g(knot_set_id)
+            ktab_off = q1np_ktab_off_g(knot_set_id)
+          else
+            nx_loc = nx
+            ny_loc = ny
+            ktab_off = 1
+          end if
+
+          nknot_u = nx_loc + 2*p + 1
+          nknot_v = ny_loc + 2*q + 1
           allocate(u(nknot_u))
           allocate(v(nknot_v))
-
-          call q1np_get_knot_vectors(nx, ny, p, q, q1np_ktab, u, v)
+          u(:) = q1np_ktab(ktab_off : ktab_off + nknot_u - 1)
+          v(:) = q1np_ktab(ktab_off + nknot_u : ktab_off + nknot_u + nknot_v - 1)
 
 !C----------------------------------------------------------------------
 !C   Starter-side Jacobian checks may run before the global Q1NP Gauss

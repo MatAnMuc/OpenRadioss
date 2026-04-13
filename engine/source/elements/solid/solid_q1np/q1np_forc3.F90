@@ -68,7 +68,7 @@
      &                      TABLE, IPRI, MAT_ELEM, NG, H3D_STRAIN, SVIS, GLOB_THERM, &
      &                      SNPC, NUMGEO, NUMNOD, NUMELS, NUMELQ, NGROUP, SBUFMAT, STF, &
      &                      NUMMAT, NTABLE, NSVOIS, IRESP, IDEL7NOK, MAXFUNC, USERL_AVAIL, &
-     &                      IMON_MAT, IMPL_S, IDYNA, IDTMIN, DT, SENSORS)
+     &                      IMON_MAT, IMPL_S, IDYNA, IDTMIN, DT, ITAB, SENSORS)
   !-----------------------------------------------
   !   M o d u l e s
   !-----------------------------------------------
@@ -83,7 +83,6 @@
       USE DT_MOD
       USE GLOB_THERM_MOD
       USE CONSTANT_MOD, ONLY : ZERO, ONE, HALF
-      USE DEBUG_MOD,    ONLY : ITAB_DEBUG
       USE RESTMOD,      ONLY : IQ1NP_TAB, IQ1NP_BULK_TAB, KQ1NP_TAB, Q1NP_KTAB
       USE Q1NP_RESTART_MOD
       USE Q1NP_GEOM_MOD
@@ -149,7 +148,7 @@
       INTEGER,            INTENT(IN)    :: OFFSET, IPRI
       INTEGER,            INTENT(INOUT) :: IDEL7NOK
       INTEGER,            INTENT(IN)    :: NPF(:)
-      INTEGER,            INTENT(IN)    :: IPARTS(*) !SIZE NEL?
+      INTEGER,            INTENT(IN)    :: IPARTS(NUMELS)
       INTEGER,            INTENT(IN)    :: IPM(NPROPMI,NUMMAT)
       INTEGER,            INTENT(IN)    :: IXS(NIXS,NUMELS)
       INTEGER,            INTENT(IN)    :: IPARG(NPARG,NGROUP)
@@ -164,7 +163,7 @@
       my_real,            INTENT(INOUT) :: STIFN(NUMNOD)
       my_real,            INTENT(INOUT) :: TF(:)
       my_real,            INTENT(INOUT) :: BUFMAT(:)
-      my_real,            INTENT(INOUT) :: FV(*) !SIZE MAXFUNC?
+      my_real,            INTENT(INOUT) :: FV(MAXFUNC)
       my_real,            INTENT(INOUT) :: PARTSAV(20,NPART)
       my_real,            INTENT(INOUT) :: GRESAV(:)
       my_real,            INTENT(INOUT) :: GRTH(:)
@@ -178,18 +177,22 @@
       my_real, DIMENSION(MVSIZ,6), INTENT(INOUT) :: SVIS
       TYPE(GLOB_THERM_),  INTENT(INOUT) :: GLOB_THERM
       TYPE(DT_),          INTENT(IN)    :: DT
+      INTEGER,            INTENT(IN)    :: ITAB(NUMNOD)
       TYPE(SENSORS_),     INTENT(INOUT) :: SENSORS
   !-----------------------------------------------
   !   L o c a l   V a r i a b l e s
   !-----------------------------------------------
-      INTEGER :: I, K, IU, IV, IT, IEL, IQ1NP
-      INTEGER :: NFT_G, MAX_NNODE, TOTAL_NODE_REF, P, Q, U_LEN, V_LEN
+      INTEGER :: I, J, K, IU, IV, IT, IEL, IQ1NP
+      INTEGER :: NFT_G, MAX_NNODE, TOTAL_NODE_REF, U_LEN, V_LEN
+      INTEGER :: P_MAX, Q_MAX, P_CUR, Q_CUR
       INTEGER :: NX_FOUND, NY_FOUND, NX_CAND, NY_CAND
       INTEGER :: NKNOT_U, NKNOT_V, NGP_Q1NP, IPT_Q1NP, IERR
       INTEGER :: NUM_GROUP_NODE, GPOS, LOCAL_ID
+      INTEGER :: KNOT_SET_ID
       INTEGER :: IEXPAN, ISTRAIN, ILAY, SZ_IX, TH_STRAIN
       INTEGER :: Q1NP_IDS(MVSIZ), II(6)
       INTEGER, ALLOCATABLE :: NCTRL_ELEM(:)
+      INTEGER, ALLOCATABLE :: U_LEN_EL(:), V_LEN_EL(:)
       INTEGER, ALLOCATABLE :: ELEM_U(:), ELEM_V(:), PID_ELEM(:)
       INTEGER, ALLOCATABLE :: MAT_ID_ELEM(:), NGL_ELEM(:)
       INTEGER, ALLOCATABLE :: NODE_GID(:,:), NODE_LID(:,:), NODE_POS(:,:)
@@ -229,6 +232,9 @@
       my_real :: DUMMY_FLUX(1,1)
       my_real :: DTFAC1(102), DTMIN1(102), PERCENT_ADDMASS
       my_real :: DT_STOP_PERCENT_ADDMASS, MASS0_START, PERCENT_ADDMASS_OLD
+      LOGICAL :: Q1NP_MAP_ERROR
+      INTEGER, SAVE, ALLOCATABLE :: Q1NP_BULK_FIX_IDS(:,:)
+      LOGICAL, SAVE, ALLOCATABLE :: Q1NP_BULK_FIX_READY(:)
       COMMON /SCR18R/ DTFAC1, DTMIN1, PERCENT_ADDMASS, &
      &                DT_STOP_PERCENT_ADDMASS, MASS0_START, PERCENT_ADDMASS_OLD
   !-----------------------------------------------
@@ -263,28 +269,77 @@
       NFT_G = IPARG(3,NG)
       MAX_NNODE = 0
       TOTAL_NODE_REF = 0
+      P_MAX = 0
+      Q_MAX = 0
 
       DO K = 1, NEL
-        DO IQ1NP = 1, NUMELQ1NP_G
-          IF (KQ1NP_TAB(5,IQ1NP) == IXS(NIXS,NFT_G + K)) EXIT
+        IQ1NP = 0
+        DO J = 1, NUMELQ1NP_G
+          IF (KQ1NP_TAB(5,J) == IXS(NIXS,NFT_G + K)) THEN
+            IQ1NP = J
+            EXIT
+          ENDIF
         END DO
+        IF (IQ1NP <= 0) THEN
+          WRITE(*,'(A,I10,A,I8,A,I8,A,I8)') &
+     &      'Q1NP ERROR: no KQ1NP_TAB row for brick user ID=', IXS(NIXS,NFT_G + K), &
+     &      ' NG=', NG, ' lane=', K, ' NUMELQ1NP_G=', NUMELQ1NP_G
+          RETURN
+        ENDIF
 
         Q1NP_IDS(K) = IQ1NP
         MAX_NNODE = MAX(MAX_NNODE, KQ1NP_TAB(3,IQ1NP) + 4)
         TOTAL_NODE_REF = TOTAL_NODE_REF + KQ1NP_TAB(3,IQ1NP) + 4
-        P = KQ1NP_TAB(8,IQ1NP)
-        Q = KQ1NP_TAB(9,IQ1NP)
+        P_CUR = KQ1NP_TAB(8,IQ1NP)
+        Q_CUR = KQ1NP_TAB(9,IQ1NP)
+        P_MAX = MAX(P_MAX, P_CUR)
+        Q_MAX = MAX(Q_MAX, Q_CUR)
       END DO
 
   !-----------------------------------------------------------------------
   !  (2) Reconstruct Q1NP parametric grid + initialize Gauss scheme
   !-----------------------------------------------------------------------
-      CALL Q1NP_REBUILD_GRID(Q1NP_NX_G, Q1NP_NY_G, P, Q)
+      ALLOCATE(U_LEN_EL(NEL), V_LEN_EL(NEL))
+      U_LEN = 0
+      V_LEN = 0
+      DO K = 1, NEL
+        KNOT_SET_ID = KQ1NP_TAB(15, Q1NP_IDS(K))
+        P_CUR = KQ1NP_TAB(8, Q1NP_IDS(K))
+        Q_CUR = KQ1NP_TAB(9, Q1NP_IDS(K))
+        IF (KQ1NP_TAB(12, Q1NP_IDS(K)) > 0 .AND. &
+     &      KQ1NP_TAB(13, Q1NP_IDS(K)) > 0) THEN
+          NX_CAND = KQ1NP_TAB(12, Q1NP_IDS(K))
+          NY_CAND = KQ1NP_TAB(13, Q1NP_IDS(K))
+        ELSE IF (Q1NP_NKNOT_SETS_G > 0) THEN
+          IF (KNOT_SET_ID <= 0 .OR. KNOT_SET_ID > Q1NP_NKNOT_SETS_G) KNOT_SET_ID = 1
+          NX_CAND = Q1NP_NX_SET_G(KNOT_SET_ID)
+          NY_CAND = Q1NP_NY_SET_G(KNOT_SET_ID)
+        ELSE
+          NX_CAND = Q1NP_NX_G
+          NY_CAND = Q1NP_NY_G
+        END IF
+        U_LEN_EL(K) = NX_CAND + 2*P_CUR + 1
+        V_LEN_EL(K) = NY_CAND + 2*Q_CUR + 1
+        U_LEN = MAX(U_LEN, U_LEN_EL(K))
+        V_LEN = MAX(V_LEN, V_LEN_EL(K))
+      END DO
 
-      U_LEN = Q1NP_NX_G + 2*P + 1
-      V_LEN = Q1NP_NY_G + 2*Q + 1
+      CALL Q1NP_INIT_GAUSS_SCHEME_STARTER(P_MAX + 1, Q_MAX + 1, 2)
 
-      CALL Q1NP_INIT_GAUSS_SCHEME_STARTER(P + 1, Q + 1, 2)
+      IF (.NOT. ALLOCATED(Q1NP_BULK_FIX_IDS) .OR. .NOT. ALLOCATED(Q1NP_BULK_FIX_READY)) THEN
+        ALLOCATE(Q1NP_BULK_FIX_IDS(4,MAX(NUMELQ1NP_G,1)))
+        ALLOCATE(Q1NP_BULK_FIX_READY(MAX(NUMELQ1NP_G,1)))
+        Q1NP_BULK_FIX_IDS = 0
+        Q1NP_BULK_FIX_READY = .FALSE.
+      ELSE IF (SIZE(Q1NP_BULK_FIX_IDS,2) /= MAX(NUMELQ1NP_G,1) .OR. &
+     &         SIZE(Q1NP_BULK_FIX_READY) /= MAX(NUMELQ1NP_G,1)) THEN
+        DEALLOCATE(Q1NP_BULK_FIX_IDS, Q1NP_BULK_FIX_READY)
+        ALLOCATE(Q1NP_BULK_FIX_IDS(4,MAX(NUMELQ1NP_G,1)))
+        ALLOCATE(Q1NP_BULK_FIX_READY(MAX(NUMELQ1NP_G,1)))
+        Q1NP_BULK_FIX_IDS = 0
+        Q1NP_BULK_FIX_READY = .FALSE.
+      END IF
+      IF (TT == ZERO) Q1NP_BULK_FIX_READY = .FALSE.
 
       ! Total Number of Gauss points in the Q1NP element
       NGP_Q1NP = Q1NP_NP_U_G * Q1NP_NP_V_G * Q1NP_NP_T_G
@@ -303,8 +358,8 @@
       ALLOCATE(X_ELEM(3,MAX_NNODE,NEL), V_ELEM(3,MAX_NNODE,NEL))
       ALLOCATE(F_INT_ELEM(3,MAX_NNODE,NEL))
       ALLOCATE(MASS_ELEM(MAX_NNODE,NEL), STIG_ELEM(MAX_NNODE,NEL))
-      ALLOCATE(U_KNOT(Q1NP_NX_G + 2*P + 1, NEL))
-      ALLOCATE(V_KNOT(Q1NP_NY_G + 2*Q + 1, NEL))
+      ALLOCATE(U_KNOT(U_LEN, NEL))
+      ALLOCATE(V_KNOT(V_LEN, NEL))
       ALLOCATE(NVAL(MAX_NNODE), DN_LOCAL(MAX_NNODE,3), DN_GLOBAL(MAX_NNODE,3))
       ALLOCATE(MATB_GP(3*MAX_NNODE,NEL))
       ALLOCATE(VGAUSS(NGP_Q1NP,NEL))
@@ -326,7 +381,9 @@
   !-----------------------------------------------------------------------
   !  (5) Build node/group bookkeeping and gather X/V into element-local arrays
   !-----------------------------------------------------------------------
+      Q1NP_MAP_ERROR = .FALSE.
       CALL Q1NP_INIT_NODE_MAP()
+      IF (Q1NP_MAP_ERROR) RETURN
 
   !-----------------------------------------------------------------------
   !  (6) Initialize element fields (OFF, RHO0, DELTAX, buffers, etc.)
@@ -388,6 +445,7 @@
 ! Node/group bookkeeping and gather X/V into element-local arrays
 !=======================================================================
         SUBROUTINE Q1NP_INIT_NODE_MAP()
+          INTEGER :: BULK_NODE_IDS(4)
           NODE_GID = 0 ! Global node ID
           NODE_LID = 0 ! Local node ID
           NODE_POS = 0 ! Position of the node in the group
@@ -404,11 +462,6 @@
           VGAUSS = ZERO ! Gauss point values
           NUM_GROUP_NODE = 0 ! Number of group nodes
 
-          ! Extract common U,V knot vectors once per group; they are identical for all Q1NP elements in this group
-          CALL Q1NP_GET_KNOT_VECTORS(Q1NP_NX_G, Q1NP_NY_G, P, Q, &
-     &                               Q1NP_KTAB, U_KNOT(1:U_LEN,1), &
-     &                               V_KNOT(1:V_LEN,1))
-
           ! Build the element-local node lists (control points + 4 bulk nodes)
           DO IEL = 1, NEL
             IQ1NP = Q1NP_IDS(IEL)
@@ -422,17 +475,28 @@
 
             NGL_ELEM(IEL) = KQ1NP_TAB(5,IQ1NP)
 
-            ! Reuse the group-level U,V knot vectors for each element lane
-            U_KNOT(1:U_LEN,IEL) = U_KNOT(1:U_LEN,1)
-            V_KNOT(1:V_LEN,IEL) = V_KNOT(1:V_LEN,1)
+            ! Per-element knot vectors (heterogeneous NX/NY via knot_set_id in KQ1NP_TAB(15,*)).
+            KNOT_SET_ID = KQ1NP_TAB(15, IQ1NP)
+            IF (Q1NP_NKNOT_SETS_G > 0 .AND. KNOT_SET_ID > 0 .AND. &
+     &          KNOT_SET_ID <= Q1NP_NKNOT_SETS_G) THEN
+              U_KNOT(1:U_LEN_EL(IEL),IEL) = &
+     &            Q1NP_KTAB(Q1NP_KTAB_OFF_G(KNOT_SET_ID) : &
+     &                     Q1NP_KTAB_OFF_G(KNOT_SET_ID) + U_LEN_EL(IEL) - 1)
+              V_KNOT(1:V_LEN_EL(IEL),IEL) = &
+     &            Q1NP_KTAB(Q1NP_KTAB_OFF_G(KNOT_SET_ID) + U_LEN_EL(IEL) : &
+     &                     Q1NP_KTAB_OFF_G(KNOT_SET_ID) + U_LEN_EL(IEL) + V_LEN_EL(IEL) - 1)
+            ELSE
+              U_KNOT(1:U_LEN_EL(IEL),IEL) = Q1NP_KTAB(1:U_LEN_EL(IEL))
+              V_KNOT(1:V_LEN_EL(IEL),IEL) = Q1NP_KTAB(U_LEN_EL(IEL)+1:U_LEN_EL(IEL)+V_LEN_EL(IEL))
+            ENDIF
 
             ! Get the control point IDs
             DO K = 1, NCTRL_ELEM(IEL)
               NODE_GID(K,IEL) = IQ1NP_TAB(KQ1NP_TAB(4,IQ1NP) + K - 1)
             END DO
-            ! Get the bulk node IDs
+            CALL Q1NP_GET_BULK_NODE_IDS(IEL, IQ1NP, BULK_NODE_IDS)
             DO K = 1, 4
-              NODE_GID(NCTRL_ELEM(IEL) + K, IEL) = IQ1NP_BULK_TAB(KQ1NP_TAB(14,IQ1NP) + K - 1)
+              NODE_GID(NCTRL_ELEM(IEL) + K, IEL) = BULK_NODE_IDS(K)
             END DO
 
             ! Get the group node IDs
@@ -447,15 +511,24 @@
             END DO
           END DO
 
-          ! Build local-id lookup table
+          ! IQ1NP_TAB / IQ1NP_BULK_TAB store engine-local node indices after
+          ! control-point promotion in starter. Do not remap them via ITAB_DEBUG.
           DO I = 1, NUM_GROUP_NODE
-            GROUP_LID(I) = FIND_GROUP_NODE(GROUP_GID(I), ITAB_DEBUG, SIZE(ITAB_DEBUG))
+            GROUP_LID(I) = GROUP_GID(I)
           END DO
 
           ! Element coordinate and velocity arrays
           DO IEL = 1, NEL
             DO K = 1, NCTRL_ELEM(IEL) + 4
               LOCAL_ID = GROUP_LID(NODE_POS(K,IEL))
+              IF (LOCAL_ID <= 0 .OR. LOCAL_ID > NUMNOD) THEN
+                WRITE(*,'(A,I10,A,I10,A,I10,A,I10,A,I10)') &
+     &            'Q1NP ERROR: invalid local node id for element ', NGL_ELEM(IEL), &
+     &            ' lane ', IEL, ' slot ', K, ' raw id ', NODE_GID(K,IEL), &
+     &            ' local id ', LOCAL_ID
+                Q1NP_MAP_ERROR = .TRUE.
+                RETURN
+              END IF
               NODE_LID(K,IEL) = LOCAL_ID
               X_ELEM(1,K,IEL) = X(1,LOCAL_ID)
               X_ELEM(2,K,IEL) = X(2,LOCAL_ID)
@@ -466,6 +539,154 @@
             END DO
           END DO
         END SUBROUTINE Q1NP_INIT_NODE_MAP
+
+!=======================================================================
+! Resolve the 4 bulk nodes for one Q1NP element.
+!=======================================================================
+        SUBROUTINE Q1NP_GET_BULK_NODE_IDS(IEL_LOCAL, IQ1NP_LOCAL, BULK_NODE_IDS_OUT)
+          INTEGER, INTENT(IN)  :: IEL_LOCAL, IQ1NP_LOCAL
+          INTEGER, INTENT(OUT) :: BULK_NODE_IDS_OUT(4)
+          INTEGER :: STORED_BULK(4), REBUILT_BULK(4)
+          INTEGER :: K_LOCAL, IERR_LOCAL, OFF14
+          my_real :: MATCH_SCORE
+
+          OFF14 = KQ1NP_TAB(14,IQ1NP_LOCAL)
+          DO K_LOCAL = 1, 4
+            STORED_BULK(K_LOCAL) = IQ1NP_BULK_TAB(OFF14 + K_LOCAL - 1)
+          END DO
+
+          IF (.NOT. Q1NP_BULK_FIX_READY(IQ1NP_LOCAL)) THEN
+            CALL Q1NP_REBUILD_BULK_FROM_HEX(IEL_LOCAL, IQ1NP_LOCAL, REBUILT_BULK, MATCH_SCORE, IERR_LOCAL)
+            IF (IERR_LOCAL == 0) THEN
+              Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL) = REBUILT_BULK(1:4)
+            ELSE
+              Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL) = STORED_BULK(1:4)
+            END IF
+            Q1NP_BULK_FIX_READY(IQ1NP_LOCAL) = .TRUE.
+          END IF
+
+          BULK_NODE_IDS_OUT(1:4) = Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL)
+        END SUBROUTINE Q1NP_GET_BULK_NODE_IDS
+
+!=======================================================================
+! Recover the opposite HEX8 face by matching the fitted Q1NP top patch to
+! the parent brick faces.
+!=======================================================================
+        SUBROUTINE Q1NP_REBUILD_BULK_FROM_HEX(IEL_LOCAL, IQ1NP_LOCAL, BULK_NODE_IDS_OUT, MATCH_SCORE_OUT, IERR_OUT)
+          INTEGER, INTENT(IN)  :: IEL_LOCAL, IQ1NP_LOCAL
+          INTEGER, INTENT(OUT) :: BULK_NODE_IDS_OUT(4)
+          my_real, INTENT(OUT) :: MATCH_SCORE_OUT
+          INTEGER, INTENT(OUT) :: IERR_OUT
+          INTEGER :: IEL_HEX8, IFACE, IFOPP, IPERM, K_LOCAL, J_LOCAL
+          INTEGER :: FACE_IXS(4,6), OPPOSITE(6), OPP_PAIR(4,6), CORNER_PERM(4,8)
+          INTEGER :: NODES_FACE(4), NODES_OPP(4), CANDIDATE_BULK(4)
+          my_real :: TOP_CORNER(3,4), DIFF_LOCAL(3), SCORE_LOCAL, BEST_SCORE
+          DATA FACE_IXS / &
+     &      2,3,4,5, 6,7,8,9, 2,3,7,6, 3,4,8,7, 4,5,9,8, 5,2,6,9 /
+          DATA OPPOSITE / 2,1,5,6,3,4 /
+          DATA OPP_PAIR / &
+     &      1,2,3,4, 1,2,3,4, 2,1,4,3, 2,1,4,3, 2,1,4,3, 2,1,4,3 /
+          DATA CORNER_PERM / &
+     &      1,2,3,4, &
+     &      2,3,4,1, &
+     &      3,4,1,2, &
+     &      4,1,2,3, &
+     &      1,4,3,2, &
+     &      4,3,2,1, &
+     &      3,2,1,4, &
+     &      2,1,4,3 /
+
+          BULK_NODE_IDS_OUT = 0
+          MATCH_SCORE_OUT = HUGE(ONE)
+          IERR_OUT = 1
+
+          IEL_HEX8 = KQ1NP_TAB(10,IQ1NP_LOCAL)
+          IF (IEL_HEX8 > 0 .AND. IEL_HEX8 <= NUMELS) THEN
+            IF (IXS(NIXS,IEL_HEX8) /= KQ1NP_TAB(5,IQ1NP_LOCAL)) IEL_HEX8 = 0
+          ELSE
+            IEL_HEX8 = 0
+          END IF
+          IF (IEL_HEX8 <= 0) THEN
+            DO J_LOCAL = 1, NUMELS
+              IF (IXS(NIXS,J_LOCAL) == KQ1NP_TAB(5,IQ1NP_LOCAL)) THEN
+                IEL_HEX8 = J_LOCAL
+                EXIT
+              END IF
+            END DO
+            IF (IEL_HEX8 > 0) KQ1NP_TAB(10,IQ1NP_LOCAL) = IEL_HEX8
+          END IF
+          IF (IEL_HEX8 <= 0 .OR. IEL_HEX8 > NUMELS) RETURN
+
+          CALL Q1NP_EVAL_TOP_SURF_POINT(IEL_LOCAL, -ONE, -ONE, TOP_CORNER(1:3,1))
+          CALL Q1NP_EVAL_TOP_SURF_POINT(IEL_LOCAL,  ONE, -ONE, TOP_CORNER(1:3,2))
+          CALL Q1NP_EVAL_TOP_SURF_POINT(IEL_LOCAL,  ONE,  ONE, TOP_CORNER(1:3,3))
+          CALL Q1NP_EVAL_TOP_SURF_POINT(IEL_LOCAL, -ONE,  ONE, TOP_CORNER(1:3,4))
+
+          BEST_SCORE = HUGE(ONE)
+          DO IFACE = 1, 6
+            IFOPP = OPPOSITE(IFACE)
+            DO K_LOCAL = 1, 4
+              NODES_FACE(K_LOCAL) = IXS(FACE_IXS(K_LOCAL,IFACE), IEL_HEX8)
+              NODES_OPP(K_LOCAL) = IXS(FACE_IXS(K_LOCAL,IFOPP), IEL_HEX8)
+            END DO
+
+            DO IPERM = 1, 8
+              SCORE_LOCAL = ZERO
+              DO K_LOCAL = 1, 4
+                J_LOCAL = CORNER_PERM(K_LOCAL,IPERM)
+                IF (NODES_FACE(J_LOCAL) <= 0 .OR. NODES_FACE(J_LOCAL) > NUMNOD) THEN
+                  SCORE_LOCAL = HUGE(ONE)
+                  EXIT
+                END IF
+
+                DIFF_LOCAL(1:3) = TOP_CORNER(1:3,K_LOCAL) - X(1:3,NODES_FACE(J_LOCAL))
+                SCORE_LOCAL = SCORE_LOCAL + DOT_PRODUCT(DIFF_LOCAL, DIFF_LOCAL)
+                CANDIDATE_BULK(K_LOCAL) = NODES_OPP(OPP_PAIR(J_LOCAL,IFACE))
+              END DO
+
+              IF (SCORE_LOCAL < BEST_SCORE) THEN
+                BEST_SCORE = SCORE_LOCAL
+                BULK_NODE_IDS_OUT(1:4) = CANDIDATE_BULK(1:4)
+              END IF
+            END DO
+          END DO
+
+          MATCH_SCORE_OUT = BEST_SCORE
+          IF (MINVAL(BULK_NODE_IDS_OUT) <= 0 .OR. MAXVAL(BULK_NODE_IDS_OUT) > NUMNOD) RETURN
+
+          IERR_OUT = 0
+        END SUBROUTINE Q1NP_REBUILD_BULK_FROM_HEX
+
+!=======================================================================
+! Evaluate one top-surface point using only the Q1NP control points.
+!=======================================================================
+        SUBROUTINE Q1NP_EVAL_TOP_SURF_POINT(IEL_LOCAL, XI_LOCAL, ETA_LOCAL, XYZ_OUT)
+          INTEGER, INTENT(IN) :: IEL_LOCAL
+          my_real, INTENT(IN) :: XI_LOCAL, ETA_LOCAL
+          my_real, INTENT(OUT) :: XYZ_OUT(3)
+          INTEGER :: IQ1NP_LOCAL, P_LOCAL, Q_LOCAL
+          INTEGER :: NNODE_LOCAL, K_LOCAL, LOCAL_ID
+          my_real :: NVAL_LOCAL(MAX_NNODE)
+          my_real :: DN_TMP(MAX_NNODE,3)
+
+          IQ1NP_LOCAL = Q1NP_IDS(IEL_LOCAL)
+          P_LOCAL = KQ1NP_TAB(8,IQ1NP_LOCAL)
+          Q_LOCAL = KQ1NP_TAB(9,IQ1NP_LOCAL)
+          NNODE_LOCAL = NCTRL_ELEM(IEL_LOCAL) + 4
+
+          CALL Q1NP_SHAPE_FUNCTIONS(XI_LOCAL, ETA_LOCAL, ONE, P_LOCAL, Q_LOCAL, &
+     &                              U_KNOT(1:U_LEN_EL(IEL_LOCAL),IEL_LOCAL), &
+     &                              V_KNOT(1:V_LEN_EL(IEL_LOCAL),IEL_LOCAL), &
+     &                              ELEM_U(IEL_LOCAL), ELEM_V(IEL_LOCAL), &
+     &                              NVAL_LOCAL(1:NNODE_LOCAL), DN_TMP(1:NNODE_LOCAL,1:3))
+
+          XYZ_OUT = ZERO
+          DO K_LOCAL = 1, NCTRL_ELEM(IEL_LOCAL)
+            LOCAL_ID = NODE_GID(K_LOCAL,IEL_LOCAL)
+            IF (LOCAL_ID <= 0 .OR. LOCAL_ID > NUMNOD) CYCLE
+            XYZ_OUT(1:3) = XYZ_OUT(1:3) + NVAL_LOCAL(K_LOCAL) * X(1:3,LOCAL_ID)
+          END DO
+        END SUBROUTINE Q1NP_EVAL_TOP_SURF_POINT
 
 !=======================================================================
 ! Initialize element fields (OFF, RHO0, DELTAX, buffers, etc.)
@@ -567,6 +788,13 @@
             OFF(IEL_LOCAL) = GBUF%OFF(IEL_LOCAL)
             RHO0(IEL_LOCAL) = PM(1,MAT_ID_ELEM(IEL_LOCAL))
             CALL Q1NP_CHAR_LEN(IEL_LOCAL, DELTAX(IEL_LOCAL))
+!            IF (ASSOCIATED(GBUF%DELTAX)) THEN
+!              IF (TT == ZERO .OR. GBUF%DELTAX(IEL_LOCAL) <= EPSILON(ONE)) THEN
+!                GBUF%DELTAX(IEL_LOCAL) = DELTAX(IEL_LOCAL)
+!              ELSE
+!                DELTAX(IEL_LOCAL) = MIN(DELTAX(IEL_LOCAL), GBUF%DELTAX(IEL_LOCAL))
+!              END IF
+!            END IF
           END DO
         END SUBROUTINE Q1NP_INIT_ELEM_FIELDS
 
@@ -645,7 +873,7 @@
           my_real, INTENT(IN)  :: XI, ETA, ZETA, GPW
           INTEGER, INTENT(IN)  :: IU, IV, IT
           INTEGER, INTENT(OUT) :: IERR_OUT
-          INTEGER :: IEL_LOCAL, NNODE_LOCAL, K_LOCAL
+          INTEGER :: IEL_LOCAL, NNODE_LOCAL, K_LOCAL, P_LOCAL, Q_LOCAL
           my_real :: JMAT_LOCAL(3,3), JINV_LOCAL(3,3), DETJ_LOCAL
           INTEGER :: IERR_LOCAL
 
@@ -653,9 +881,12 @@
 
           DO IEL_LOCAL = 1, NEL
             NNODE_LOCAL = NCTRL_ELEM(IEL_LOCAL) + 4
+            P_LOCAL = KQ1NP_TAB(8, Q1NP_IDS(IEL_LOCAL))
+            Q_LOCAL = KQ1NP_TAB(9, Q1NP_IDS(IEL_LOCAL))
 
-            CALL Q1NP_SHAPE_FUNCTIONS(XI, ETA, ZETA, P, Q, &
-     &                                  U_KNOT(1:U_LEN,IEL_LOCAL), V_KNOT(1:V_LEN,IEL_LOCAL), &
+            CALL Q1NP_SHAPE_FUNCTIONS(XI, ETA, ZETA, P_LOCAL, Q_LOCAL, &
+     &                                  U_KNOT(1:U_LEN_EL(IEL_LOCAL),IEL_LOCAL), &
+     &                                  V_KNOT(1:V_LEN_EL(IEL_LOCAL),IEL_LOCAL), &
      &                                  ELEM_U(IEL_LOCAL), ELEM_V(IEL_LOCAL), &
      &                                  NVAL(1:NNODE_LOCAL), DN_LOCAL(1:NNODE_LOCAL,1:3))
 
@@ -663,10 +894,23 @@
      &                           NNODE_LOCAL, JMAT_LOCAL, DETJ_LOCAL, JINV_LOCAL, DN_GLOBAL(1:NNODE_LOCAL,1:3), IERR_LOCAL)
 
             IF (IERR_LOCAL /= 0) THEN
-              write (*,*) 'TT = ', TT
+              WRITE(*,*) 'TT = ', TT
               WRITE(*,'(A,I10,A,I10,A,I4,A,I4,A,I4)') &
      &            'Q1NP ERROR: singular/non-positive Jacobian in element ', NGL_ELEM(IEL_LOCAL), &
      &            ' group ', NG, ' at GP ', IU, ',', IV, ',', IT
+              WRITE(*,'(A,I10,A,I10)') '  IQ1NP=', Q1NP_IDS(IEL_LOCAL), &
+     &            '  knot_set_id KQ1NP_TAB(15)=', KQ1NP_TAB(15, Q1NP_IDS(IEL_LOCAL))
+              WRITE(*,'(A,I10,A,I10,A,I10,A,I10)') '  U_LEN_EL=', U_LEN_EL(IEL_LOCAL), &
+     &            ' V_LEN_EL=', V_LEN_EL(IEL_LOCAL), ' NCTRL=', NCTRL_ELEM(IEL_LOCAL), &
+     &            ' NNODE=', NNODE_LOCAL
+              WRITE(*,'(A,I10)') '  Q1NP_NKNOT_SETS_G=', Q1NP_NKNOT_SETS_G
+              WRITE(*,'(A,E14.6)') '  DETJ=', DETJ_LOCAL
+              IF (U_LEN_EL(IEL_LOCAL) >= 1) WRITE(*,'(A,3E14.6)') '  U_KNOT(1:3)=', &
+     &            U_KNOT(1:MIN(3,U_LEN_EL(IEL_LOCAL)),IEL_LOCAL)
+              IF (V_LEN_EL(IEL_LOCAL) >= 1) WRITE(*,'(A,3E14.6)') '  V_KNOT(1:3)=', &
+     &            V_KNOT(1:MIN(3,V_LEN_EL(IEL_LOCAL)),IEL_LOCAL)
+              WRITE(*,'(A,2E14.6)') '  ELEM_U ELEM_V (param cell)=', ELEM_U(IEL_LOCAL), &
+     &            ELEM_V(IEL_LOCAL)
               IERR_OUT = IERR_LOCAL
               RETURN
             END IF
@@ -1014,72 +1258,88 @@
         SUBROUTINE Q1NP_CHAR_LEN(IEL_LOCAL, DELTAX_OUT)
           INTEGER, INTENT(IN) :: IEL_LOCAL
           my_real, INTENT(OUT) :: DELTAX_OUT
-          INTEGER :: N_TOP_LOCAL
-          INTEGER :: TOP_1_LOCAL, TOP_2_LOCAL, TOP_3_LOCAL, TOP_4_LOCAL
-          INTEGER :: BOT_1_LOCAL, BOT_2_LOCAL, BOT_3_LOCAL, BOT_4_LOCAL
           my_real, PARAMETER :: SPAN_SCALE = 0.25
-          my_real :: VOL_LENGTH_LOCAL
+          my_real :: TOP_1_XYZ(3), TOP_2_XYZ(3), TOP_3_XYZ(3), TOP_4_XYZ(3)
+          my_real :: BOT_1_XYZ(3), BOT_2_XYZ(3), BOT_3_XYZ(3), BOT_4_XYZ(3)
           my_real :: LU_TOP_1, LU_TOP_2, LV_TOP_1, LV_TOP_2
           my_real :: LU_BOT_1, LU_BOT_2, LV_BOT_1, LV_BOT_2
           my_real :: LT_1, LT_2, LT_3, LT_4
           my_real :: SPAN_U, SPAN_V, SPAN_T
-          my_real :: INV_P_LOCAL, INV_Q_LOCAL
 
-          N_TOP_LOCAL = NCTRL_ELEM(IEL_LOCAL)
-          INV_P_LOCAL = ONE / REAL(P, KIND(ONE))
-          INV_Q_LOCAL = ONE / REAL(Q, KIND(ONE))
-          TOP_1_LOCAL = 1
-          TOP_2_LOCAL = P + 1
-          TOP_3_LOCAL = N_TOP_LOCAL
-          TOP_4_LOCAL = N_TOP_LOCAL - P
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL, -ONE, -ONE,  ONE, TOP_1_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL,  ONE, -ONE,  ONE, TOP_2_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL,  ONE,  ONE,  ONE, TOP_3_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL, -ONE,  ONE,  ONE, TOP_4_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL, -ONE, -ONE, -ONE, BOT_1_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL,  ONE, -ONE, -ONE, BOT_2_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL,  ONE,  ONE, -ONE, BOT_3_XYZ)
+          CALL Q1NP_EVAL_PHYS_POINT(IEL_LOCAL, -ONE,  ONE, -ONE, BOT_4_XYZ)
 
-          BOT_1_LOCAL = N_TOP_LOCAL + 1
-          BOT_2_LOCAL = N_TOP_LOCAL + 2
-          BOT_3_LOCAL = N_TOP_LOCAL + 3
-          BOT_4_LOCAL = N_TOP_LOCAL + 4
+          LU_TOP_1 = Q1NP_POINT_DIST(TOP_1_XYZ, TOP_2_XYZ)
+          LU_TOP_2 = Q1NP_POINT_DIST(TOP_4_XYZ, TOP_3_XYZ)
+          LV_TOP_1 = Q1NP_POINT_DIST(TOP_1_XYZ, TOP_4_XYZ)
+          LV_TOP_2 = Q1NP_POINT_DIST(TOP_2_XYZ, TOP_3_XYZ)
 
-          LU_TOP_1 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_1_LOCAL, TOP_2_LOCAL)
-          LU_TOP_2 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_4_LOCAL, TOP_3_LOCAL)
-          LV_TOP_1 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_1_LOCAL, TOP_4_LOCAL)
-          LV_TOP_2 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_2_LOCAL, TOP_3_LOCAL)
+          LU_BOT_1 = Q1NP_POINT_DIST(BOT_1_XYZ, BOT_2_XYZ)
+          LU_BOT_2 = Q1NP_POINT_DIST(BOT_4_XYZ, BOT_3_XYZ)
+          LV_BOT_1 = Q1NP_POINT_DIST(BOT_1_XYZ, BOT_4_XYZ)
+          LV_BOT_2 = Q1NP_POINT_DIST(BOT_2_XYZ, BOT_3_XYZ)
 
-          LU_BOT_1 = Q1NP_NODE_DIST(IEL_LOCAL, BOT_1_LOCAL, BOT_2_LOCAL)
-          LU_BOT_2 = Q1NP_NODE_DIST(IEL_LOCAL, BOT_4_LOCAL, BOT_3_LOCAL)
-          LV_BOT_1 = Q1NP_NODE_DIST(IEL_LOCAL, BOT_1_LOCAL, BOT_4_LOCAL)
-          LV_BOT_2 = Q1NP_NODE_DIST(IEL_LOCAL, BOT_2_LOCAL, BOT_3_LOCAL)
+          LT_1 = Q1NP_POINT_DIST(TOP_1_XYZ, BOT_1_XYZ)
+          LT_2 = Q1NP_POINT_DIST(TOP_2_XYZ, BOT_2_XYZ)
+          LT_3 = Q1NP_POINT_DIST(TOP_3_XYZ, BOT_3_XYZ)
+          LT_4 = Q1NP_POINT_DIST(TOP_4_XYZ, BOT_4_XYZ)
 
-          LT_1 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_1_LOCAL, BOT_1_LOCAL)
-          LT_2 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_2_LOCAL, BOT_2_LOCAL)
-          LT_3 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_3_LOCAL, BOT_3_LOCAL)
-          LT_4 = Q1NP_NODE_DIST(IEL_LOCAL, TOP_4_LOCAL, BOT_4_LOCAL)
-
-          SPAN_U = SPAN_SCALE * (LU_TOP_1 + LU_TOP_2 + LU_BOT_1 + LU_BOT_2) * INV_P_LOCAL
-          SPAN_V = SPAN_SCALE * (LV_TOP_1 + LV_TOP_2 + LV_BOT_1 + LV_BOT_2) * INV_Q_LOCAL
+          SPAN_U = SPAN_SCALE * (LU_TOP_1 + LU_TOP_2 + LU_BOT_1 + LU_BOT_2)
+          SPAN_V = SPAN_SCALE * (LV_TOP_1 + LV_TOP_2 + LV_BOT_1 + LV_BOT_2)
           SPAN_T = SPAN_SCALE * (LT_1 + LT_2 + LT_3 + LT_4)
 
-          DELTAX_OUT =  MIN(SPAN_U, MIN(SPAN_V, SPAN_T))
-
-          IF (DELTAX_OUT <= EPSILON(ONE)) THEN
-            VOL_LENGTH_LOCAL = MAX(ABS(GBUF%VOL(IEL_LOCAL)), EPSILON(ONE)) ** &
-     &                         (ONE / REAL(3, KIND(ONE)))
-            DELTAX_OUT = VOL_LENGTH_LOCAL
-          END IF
+          DELTAX_OUT = MIN(SPAN_U, MIN(SPAN_V, SPAN_T))
 
         END SUBROUTINE Q1NP_CHAR_LEN
 
 !=======================================================================
-! Calculate the distance between two nodes in the element
+! Evaluate the current physical point of the Q1NP element at parent coordinates
 !=======================================================================
-        my_real FUNCTION Q1NP_NODE_DIST(IEL_LOCAL, NODE_A_LOCAL, NODE_B_LOCAL)
-          INTEGER, INTENT(IN) :: IEL_LOCAL, NODE_A_LOCAL, NODE_B_LOCAL
+        SUBROUTINE Q1NP_EVAL_PHYS_POINT(IEL_LOCAL, XI_LOCAL, ETA_LOCAL, ZETA_LOCAL, XYZ_OUT)
+          INTEGER, INTENT(IN) :: IEL_LOCAL
+          my_real, INTENT(IN) :: XI_LOCAL, ETA_LOCAL, ZETA_LOCAL
+          my_real, INTENT(OUT) :: XYZ_OUT(3)
+          INTEGER :: IQ1NP_LOCAL, P_LOCAL, Q_LOCAL
+          INTEGER :: NNODE_LOCAL, K_LOCAL
+          my_real :: NVAL_LOCAL(MAX_NNODE)
+          my_real :: DN_TMP(MAX_NNODE,3)
+
+          IQ1NP_LOCAL = Q1NP_IDS(IEL_LOCAL)
+          P_LOCAL = KQ1NP_TAB(8,IQ1NP_LOCAL)
+          Q_LOCAL = KQ1NP_TAB(9,IQ1NP_LOCAL)
+          NNODE_LOCAL = NCTRL_ELEM(IEL_LOCAL) + 4
+
+          CALL Q1NP_SHAPE_FUNCTIONS(XI_LOCAL, ETA_LOCAL, ZETA_LOCAL, P_LOCAL, Q_LOCAL, &
+     &                              U_KNOT(1:U_LEN_EL(IEL_LOCAL),IEL_LOCAL), &
+     &                              V_KNOT(1:V_LEN_EL(IEL_LOCAL),IEL_LOCAL), &
+     &                              ELEM_U(IEL_LOCAL), ELEM_V(IEL_LOCAL), &
+     &                              NVAL_LOCAL(1:NNODE_LOCAL), DN_TMP(1:NNODE_LOCAL,1:3))
+
+          XYZ_OUT = ZERO
+          DO K_LOCAL = 1, NNODE_LOCAL
+            XYZ_OUT(1:3) = XYZ_OUT(1:3) + NVAL_LOCAL(K_LOCAL) * X_ELEM(1:3,K_LOCAL,IEL_LOCAL)
+          END DO
+        END SUBROUTINE Q1NP_EVAL_PHYS_POINT
+
+!=======================================================================
+! Calculate the distance between two physical points
+!=======================================================================
+        my_real FUNCTION Q1NP_POINT_DIST(POINT_A, POINT_B)
+          my_real, INTENT(IN) :: POINT_A(3), POINT_B(3)
           my_real :: DX_LOCAL, DY_LOCAL, DZ_LOCAL
 
-          DX_LOCAL = X_ELEM(1,NODE_B_LOCAL,IEL_LOCAL) - X_ELEM(1,NODE_A_LOCAL,IEL_LOCAL)
-          DY_LOCAL = X_ELEM(2,NODE_B_LOCAL,IEL_LOCAL) - X_ELEM(2,NODE_A_LOCAL,IEL_LOCAL)
-          DZ_LOCAL = X_ELEM(3,NODE_B_LOCAL,IEL_LOCAL) - X_ELEM(3,NODE_A_LOCAL,IEL_LOCAL)
+          DX_LOCAL = POINT_B(1) - POINT_A(1)
+          DY_LOCAL = POINT_B(2) - POINT_A(2)
+          DZ_LOCAL = POINT_B(3) - POINT_A(3)
 
-          Q1NP_NODE_DIST = SQRT(DX_LOCAL*DX_LOCAL + DY_LOCAL*DY_LOCAL + DZ_LOCAL*DZ_LOCAL)
-        END FUNCTION Q1NP_NODE_DIST
+          Q1NP_POINT_DIST = SQRT(DX_LOCAL*DX_LOCAL + DY_LOCAL*DY_LOCAL + DZ_LOCAL*DZ_LOCAL)
+        END FUNCTION Q1NP_POINT_DIST
 
         ! ----------------------------------------------------------------------
         ! Find the group node ID for a given node ID

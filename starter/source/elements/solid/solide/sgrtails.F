@@ -493,8 +493,8 @@ C
          NGP(P)=NGROUP
          NGP_START(P)=NGROUP
 
-         NG  = (NEL-1)/NVSIZ + 1
-         DO 220 I=1,NG
+C        Variable number of groups when NE1 is reduced (e.g. Q1NP / non-Q1NP split)
+         DO 220 WHILE (NFT < NEL_PREC + NEL)
 C ngroup global
           NGROUP=NGROUP+1
           CALL ZEROIN(1,NPARG,IPARG(1,NGROUP))
@@ -1422,6 +1422,35 @@ C-------for the case where we use ISRAT=0 law in Part define and ISRAT=1 laws in
 
 C-------
         NE1 = MIN( NVSIZ, NEL + NEL_PREC - NFT) ! Nb of elements in the group
+C-------------------------------------------------
+C Shrink NE1 so a vector group never mixes Q1NP and non-Q1NP HEX8 (same PID/JHBE).
+C-------------------------------------------------
+        IF (NUMELQ1NP_G > 0 .AND. PRESENT(KQ1NP_TAB)) THEN
+          IF (NE1 > 1) THEN
+            II = EADD(N) - 1 + NFT + 1
+            IS_ELEMENT_Q1NP = .FALSE.
+            DO IEL_Q1NP = 1, NUMELQ1NP_G
+              IF (KQ1NP_TAB(5, IEL_Q1NP) == IXS(NIXS, II)) THEN
+                IS_ELEMENT_Q1NP = .TRUE.
+                EXIT
+              ENDIF
+            ENDDO
+            DO JJ = 2, NE1
+              II = EADD(N) - 1 + NFT + JJ
+              lFOUND = .FALSE.
+              DO IEL_Q1NP = 1, NUMELQ1NP_G
+                IF (KQ1NP_TAB(5, IEL_Q1NP) == IXS(NIXS, II)) THEN
+                  lFOUND = .TRUE.
+                  EXIT
+                ENDIF
+              ENDDO
+              IF (lFOUND .NEQV. IS_ELEMENT_Q1NP) THEN
+                NE1 = JJ - 1
+                EXIT
+              ENDIF
+            ENDDO
+          ENDIF
+        ENDIF
         IF (IDEBUG_Q1NP_GROUP > 0) THEN
           WRITE(*,'(A,I4,A,I4,A,I4,A,I4,A,I4)') 
      .        'Group ', NGROUP, ': NE1=', NE1, 
@@ -1499,7 +1528,7 @@ C-------------------------------------------------
               DO JJ = 1, NE1
                 II = EADD(N) - 1 + NFT + JJ
                 DO IEL_Q1NP = 1, NUMELQ1NP_G
-                  IF (KQ1NP_TAB(10, IEL_Q1NP) == II) THEN
+                  IF (KQ1NP_TAB(5, IEL_Q1NP) == IXS(NIXS, II)) THEN
                     IS_Q1NP_GROUP = .TRUE.
                     EXIT
                   ENDIF
