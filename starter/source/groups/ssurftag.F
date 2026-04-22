@@ -1059,11 +1059,6 @@ C
                     DO II=1,4
                       MS(II)=IXS(FACES(II,KK)+1,KS)
                     END DO
-                    IF (JS <= 10 .OR. KS <= 10 .AND. KK <= 2) THEN
-                      WRITE(*,'(A,I2,A,4I8)') 
-     .                  '  SURFEXT_TAGN 8-node Face ', KK, ' nodes: ',
-     .                  (MS(II), II=1,4)
-                    ENDIF
                   ENDIF
 C
 C                 keep only 1 occurrence of each node (triangles, degenerated cases...)

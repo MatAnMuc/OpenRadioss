@@ -8992,53 +8992,47 @@ C
      .             INTERFACES,S_NOD2ELS,S_NOD2ELTG,FLAG_ELEM_INTER25           ,LIST_NIN25)
 
        IF(IDDLEVEL == 1) THEN 
-        write(*,*) 
-        write(*,*) "Type of interface:",  IPARI(7)     
+        !write(*,*) 
+        !write(*,*) "Type of interface:",  IPARI(7)     
         
-        print *, ''
-        print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
-        DO I = 1, NINTER
-            print *, INTBUF_TAB(I)%NSV
-        ENDDO
+        !print *, ''
+        !print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
+        !DO I = 1, NINTER
+        !    print *, INTBUF_TAB(I)%NSV
+        !ENDDO
 
-        write(*,*)
-        print *, "Internal ID of the selected group of PRIMARY nodes (for STS):", IPARI(46)
-        print '(A, 1X, A15)', 'Title:', IGRSURF(IPARI(46))%TITLE
-        print '(A, 1X, I4)', 'Number of Segements:', IGRSURF(IPARI(46))%NSEG
+        !write(*,*)
+        !print *, "Internal ID of the selected group of PRIMARY nodes (for STS):", IPARI(46)
+        !print '(A, 1X, A15)', 'Title:', IGRSURF(IPARI(46))%TITLE
+        !print '(A, 1X, I4)', 'Number of Segements:', IGRSURF(IPARI(46))%NSEG
 
         allocate(PRIMARY_SEG_MAT(IGRSURF(IPARI(46))%NSEG, 5))
         ! Fill PRIMARY_SEG_MAT
-        print *, "PRIMARY NODES (LocalID):"
-        print '(T1, A, T15, A, T20, A, T39, A)', 'LocalElID' , '<-', 'Nodes (LocalID)', '->'
+        ! print *, "PRIMARY NODES (LocalID):"
+        ! print '(T1, A, T15, A, T20, A, T39, A)', 'LocalElID' , '<-', 'Nodes (LocalID)', '->'
         do i = 1, IGRSURF(IPARI(46))%NSEG
-            PRIMARY_SEG_MAT(i, 1) = I
-            PRIMARY_SEG_MAT(i, 2:5) = IGRSURF(IPARI(46))%NODES(i, 1:4)
-            print '(F8.0, F8.0, F8.0, F8.0, F8.0)', PRIMARY_SEG_MAT(i, :)
+             PRIMARY_SEG_MAT(i, 1) = I
+             PRIMARY_SEG_MAT(i, 2:5) = IGRSURF(IPARI(46))%NODES(i, 1:4)
+             !print '(F8.0, F8.0, F8.0, F8.0, F8.0)', PRIMARY_SEG_MAT(i,:)
         end do               
         !___________________________________________________________________
         
-        write(*,*)
-        print *, "Internal ID of the selected group of SECONDARY nodes:", 1
-        print '(A, 1X, A15)', 'Title:', IGRSURF(1)%TITLE
-        print '(A, 1X, I4)', 'Number of Segements:', IGRSURF(1)%NSEG
+        ! write(*,*)
+        ! print *, "Internal ID of the selected group of SECONDARY nodes:", 1
+        ! print '(A, 1X, A15)', 'Title:', IGRSURF(1)%TITLE
+        ! print '(A, 1X, I4)', 'Number of Segements:', IGRSURF(1)%NSEG
      
         allocate(SECONDARY_SEG_MAT(IGRSURF(1)%NSEG, 5))
         ! Fill SECONDARY_SEG_MAT
-        print *, "SECONDARY NODES (LocalID):"
-        print '(T1, A, T15, A, T20, A, T39, A)', 'LocalElID' , '<-', 'Nodes (LocalID)', '->'
+        ! print *, "SECONDARY NODES (LocalID):"
+        ! print '(T1, A, T15, A, T20, A, T39, A)', 'LocalElID' , '<-', 'Nodes (LocalID)', '->'
         do i = 1, IGRSURF(1)%NSEG
             SECONDARY_SEG_MAT(i, 1) = I
             SECONDARY_SEG_MAT(i, 2:5) = IGRSURF(1)%NODES(i, 1:4)
-            print '(F8.0, F8.0, F8.0, F8.0, F8.0)', SECONDARY_SEG_MAT(i, :)
+        !    print '(F8.0, F8.0, F8.0, F8.0, F8.0)', SECONDARY_SEG_MAT(i, :)
         end do   
       ENDIF
 C
-cc     DEALLOCATE(XFILTR)
-cc     DEALLOCATE(STFAC)
-cc     DEALLOCATE(FRIC_P)
-C      DEALLOCATE(FRIGAP)
-cc     DEALLOCATE(I2RUPT)
-cc     DEALLOCATE(AREASL)
 C----
 c      CALL ANCNTG(IDS, I, J)
        IDS =  60

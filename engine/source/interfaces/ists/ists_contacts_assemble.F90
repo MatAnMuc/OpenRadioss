@@ -9,7 +9,7 @@
      & CAND_MST_SEG_ID, CAND_SEC_SEG_ID, &
      & load_arr, node_id_load, L_out, IMPACT_glob, STIF, &
      & MAX_STS_SIZE_ACTUAL, FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, &
-     & IFQ, DT1, DT12, V, MS, CAND_F, ALPHA0, IFPEN, INTTH, QFRICT, &
+     & IFQ, DT1, DT12, V, MS, NUMNOD, CAND_F, ALPHA0, IFPEN, INTTH, QFRICT, &
      & INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, &
      & TTRIAL2_HIST)
 !-----------------------------------------------
@@ -30,7 +30,7 @@
 !-----------------------------------------------
 !   D u m m y   A r g u m e n t s
 !-----------------------------------------------
-      TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
+      TYPE(INTBUF_STRUCT_) INTBUF_TAB(:)
       REAL*8 CONT_ELEMENT(MAX_STS_SIZE_ACTUAL,3,8)
       my_real STIF(MVSIZ)
       INTEGER COUNT, OPTION
@@ -39,11 +39,12 @@
       REAL*8 load_arr(MAX_STS_SIZE_ACTUAL,8,4)
       INTEGER node_id_load(MAX_STS_SIZE_ACTUAL*8)
       INTEGER L_out, IMPACT_glob, MAX_STS_SIZE_ACTUAL
+      INTEGER NUMNOD
       my_real FRICC(MVSIZ), FRIC_COEFS(MVSIZ,10), VISCFFRIC(MVSIZ)
       my_real XMU(MVSIZ), DT1, DT12, ALPHA0
-      my_real V(3,*), MS(*)
-      my_real CAND_F(8,*)
-      INTEGER IFPEN(*)
+      my_real V(3,NUMNOD), MS(NUMNOD)
+      my_real CAND_F(8,MAX_STS_SIZE_ACTUAL)
+      INTEGER IFPEN(:)
       INTEGER MFROT, IFQ, INTTH
       my_real QFRICT
       my_real GAP  ! Gap value from user input
@@ -99,7 +100,7 @@
      &                    p_friction, EFRICT_LOC, QFRICT, &
      &                    INTTH, node_ids, .TRUE., &
      &                    XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST, &
-     &                    MAX_STS_SIZE_ACTUAL, GAP, &
+     &                    MAX_STS_SIZE_ACTUAL, NUMNOD, GAP, &
      &                    CAND_SEC_SEG_ID)
       
         IF (IMPACT == 1) THEN
