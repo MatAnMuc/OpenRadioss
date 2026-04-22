@@ -54,7 +54,7 @@
         use constant_mod, only : ZERO, ONE, HALF, TWO
         implicit none
   !C     Control of optional CSV debug export (kept ON by default)
-        logical :: q1np_export_csv = .TRUE.
+        logical :: q1np_export_csv = .FALSE.
       contains
 !C
 !C=======================================================================

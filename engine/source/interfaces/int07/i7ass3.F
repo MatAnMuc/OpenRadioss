@@ -1093,9 +1093,9 @@ C             Debug: Print forces after assembly
       END DO
 
 C     Print force balance to terminal
-      WRITE(*,*) 'SUM OF ASSEMBLED PRIMARY FORCES (Z):', sum_prim
-      WRITE(*,*) 'SUM OF ASSEMBLED SECONDARY FORCES (Z):', sum_sec
-      WRITE(*,*)
+      ! WRITE(*,*) 'SUM OF ASSEMBLED PRIMARY FORCES (Z):', sum_prim
+      ! WRITE(*,*) 'SUM OF ASSEMBLED SECONDARY FORCES (Z):', sum_sec
+      ! WRITE(*,*)
 C     Print comprehensive force balance
       IF (DEBUG_ASSEMBLY_SUMMARY) THEN
         WRITE(*,*) "========================================"

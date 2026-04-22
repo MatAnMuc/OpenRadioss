@@ -17,7 +17,7 @@
      &                   IFQ, ALPHA0, CAND_F, IFPEN, STIF0, &
      &                   p_friction, EFRICT, QFRICT, INTTH, node_ids, &
      &                   CALC_FRICTION, XI1_HIST, XI2_HIST, &
-     &                   TTRIAL1_HIST, TTRIAL2_HIST, MAX_STS_SIZE, GAP, &
+     &                   TTRIAL1_HIST, TTRIAL2_HIST, MAX_STS_SIZE, NUMNOD, GAP, &
      &                   CAND_SEC_SEG_ID)
 !-----------------------------------------------
 !   M o d u l e s   /   I m p l i c i t   T y p e s
@@ -42,8 +42,8 @@
 !     EL_NR    : Temporary Element number (for debugging)
 !     node_stiff: Output nodal stiffness values (8 components)
 !     OPTION   : 0 = Gauss quadrature, 1 = Lobatto quadrature
-!     V        : Nodal velocities (3,*)
-!     MS       : Nodal masses (*)
+!     V        : Nodal velocities (3,:)
+!     MS       : Nodal masses (:)
 !     FRICC, FRIC_COEFS, VISCFFRIC, XMU: Friction parameters
 !     MFROT    : Friction model type
 !     IFQ      : Friction formulation flag
@@ -63,19 +63,19 @@
 !     GAPV: Gap value from user input
 !-----------------------------------------------
       INTEGER IMPACT, OPTION, EL_NR, MFROT, IFQ, INTTH
+      INTEGER MAX_STS_SIZE, NUMNOD  ! Maximum size for history arrays / number of nodes
       INTEGER node_ids(8)
       LOGICAL CALC_FRICTION
       my_real STIF(MVSIZ), STIF0(MVSIZ)
       real*8  p(24), p_friction(24)
       real*8  XUPD(3,8)
       real*8  node_stiff(8)
-      my_real V(3,*), MS(*)
+      my_real V(3,NUMNOD), MS(NUMNOD)
+      my_real CAND_F(8,MAX_STS_SIZE)
+      INTEGER IFPEN(:)
       my_real FRICC(MVSIZ), FRIC_COEFS(MVSIZ,10), VISCFFRIC(MVSIZ)
       my_real XMU(MVSIZ), ALPHA0
-      my_real CAND_F(8,*)
-      INTEGER IFPEN(*)
       my_real EFRICT, QFRICT
-      INTEGER MAX_STS_SIZE  ! Maximum size for history arrays
       REAL*8 XI1_HIST(MAX_STS_SIZE,2,2)  ! History of xi1 per Gauss point
       REAL*8 XI2_HIST(MAX_STS_SIZE,2,2)  ! History of xi2 per Gauss point
       REAL*8 TTRIAL1_HIST(MAX_STS_SIZE,2,2)  ! History of T_trial(1) per Gauss point

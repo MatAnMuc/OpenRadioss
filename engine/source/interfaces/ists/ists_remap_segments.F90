@@ -5,9 +5,10 @@
 !||--- calls ---------------------------------------------------------
 !||    (none – local mapping only)
 !||====================================================================
-      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG, &
-     &  IRECT, CONT_ELEMENT, COUNT, IGRSURF, CAND_SEC_SEG_ID, &
-     &  CAND_MST_SEG_ID, MAX_STS_SIZE_ACTUAL)
+      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, NUMNOD, NRTM, CAND_SEC_SEG, &
+     &  JLT, CAND_N_CUR, CAND_E_CUR, IRECT, CONT_ELEMENT, COUNT, &
+     &  IGRSURF, CAND_SEC_SEG_ID, CAND_MST_SEG_ID, &
+     &  MAX_STS_SIZE_ACTUAL, NSURF_LOCAL, SEC_SURF_ID, MST_SURF_ID)
 !-----------------------------------------------
 !   M o d u l e s
 !----------------------------------------------- 
@@ -26,49 +27,81 @@
 !-----------------------------------------------
 !   D u m m y   A r g u m e n t s
 !-----------------------------------------------
-      TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
-      TYPE (SURF_)   , DIMENSION(*)   :: IGRSURF
-      INTEGER ITAB(*)
-      INTEGER IRECT(4,*)
-      my_real X(3,*)
+      TYPE(INTBUF_STRUCT_) INTBUF_TAB(:)
+      TYPE (SURF_)   , DIMENSION(:)   :: IGRSURF
+      INTEGER ITAB(:)
+      INTEGER JLT, NUMNOD, NRTM, CAND_N_CUR(:), CAND_E_CUR(:)
+      INTEGER IRECT(4,NRTM)
+      my_real X(3,NUMNOD)
       INTEGER CAND_SEC_SEG(MAX_STS_SIZE_ACTUAL)
       INTEGER CAND_MST_SEG(MAX_STS_SIZE_ACTUAL)
       INTEGER CAND_SEC_SEG_ID(MAX_STS_SIZE_ACTUAL,5)
       INTEGER CAND_MST_SEG_ID(MAX_STS_SIZE_ACTUAL,5)
       my_real CONT_ELEMENT(MAX_STS_SIZE_ACTUAL,3,8)
       INTEGER COUNT, MAX_STS_SIZE_ACTUAL
+      INTEGER NSURF_LOCAL, SEC_SURF_ID, MST_SURF_ID
 !-----------------------------------------------
 !   L o c a l   V a r i a b l e s
 !-----------------------------------------------
       INTEGER I, J, K, N, NI
       INTEGER candidate, candidateM
+      INTEGER BEST_OVERLAP, OVERLAP, SEC_SURF_IDX
       LOGICAL :: duplicate
-      INTEGER, ALLOCATABLE :: IGRSURF_S_TEMP(:,:), IGRSURF_M_TEMP(:,:)
+      INTEGER, ALLOCATABLE :: IGRSURF_S_TEMP(:,:)
       INTEGER, ALLOCATABLE :: found_segments(:,:)
       INTEGER, ALLOCATABLE :: ADJA(:,:)
 !-----------------------------------------------
 !   S o u r c e   L i n e s
 !-----------------------------------------------
+      SEC_SURF_IDX = SEC_SURF_ID
+      IF (INTBUF_TAB(1)%S_NSV <= 0 .OR. JLT <= 0) THEN
+        COUNT = 0
+        RETURN
+      END IF
+      IF (SEC_SURF_IDX <= 0 .OR. SEC_SURF_IDX > NSURF_LOCAL) THEN
+        BEST_OVERLAP = 0
+        SEC_SURF_IDX = 0
+        DO I = 1, NSURF_LOCAL
+          IF (I == MST_SURF_ID) CYCLE
+          IF (IGRSURF(I)%NSEG <= 0) CYCLE
+          IF (.NOT. ALLOCATED(IGRSURF(I)%NODES)) CYCLE
+          OVERLAP = 0
+          DO J = 1, IGRSURF(I)%NSEG
+            DO K = 1, 4
+              candidate = IGRSURF(I)%NODES(J, K)
+              IF (candidate <= 0) CYCLE
+              IF (ANY(INTBUF_TAB(1)%NSV(1:INTBUF_TAB(1)%S_NSV) == candidate)) THEN
+                OVERLAP = OVERLAP + 1
+              END IF
+            END DO
+          END DO
+          IF (OVERLAP > BEST_OVERLAP) THEN
+            BEST_OVERLAP = OVERLAP
+            SEC_SURF_IDX = I
+          END IF
+        END DO
+      END IF
+      IF (SEC_SURF_IDX <= 0) THEN
+        COUNT = 0
+        RETURN
+      END IF
       ! Safety checks
-      IF (IGRSURF(1)%NSEG <= 0 .OR. IGRSURF(2)%NSEG <= 0) THEN
+      IF (IGRSURF(SEC_SURF_IDX)%NSEG <= 0) THEN
         COUNT = 0
         RETURN
       END IF
-      IF (.NOT. ALLOCATED(IGRSURF(1)%NODES) .OR. &
-     &    .NOT. ALLOCATED(IGRSURF(2)%NODES)) THEN
+      IF (.NOT. ALLOCATED(IGRSURF(SEC_SURF_IDX)%NODES)) THEN
         COUNT = 0
         RETURN
       END IF
-      IF (INTBUF_TAB(1)%S_CAND_N <= 0) THEN
+      IF (JLT <= 0) THEN
         COUNT = 0
         RETURN
       END IF
 
       ! Copy surface nodes to temporary arrays
-      ALLOCATE(IGRSURF_S_TEMP(IGRSURF(1)%NSEG, 4))
-      ALLOCATE(IGRSURF_M_TEMP(IGRSURF(2)%NSEG, 4))
-      IGRSURF_S_TEMP = IGRSURF(1)%NODES
-      IGRSURF_M_TEMP = IGRSURF(2)%NODES
+      ALLOCATE(IGRSURF_S_TEMP(IGRSURF(SEC_SURF_IDX)%NSEG, 4))
+      IGRSURF_S_TEMP = IGRSURF(SEC_SURF_IDX)%NODES
 
       ! Initialize
       ALLOCATE(found_segments(2, MAX_STS_SIZE_ACTUAL))
@@ -80,12 +113,14 @@
       COUNT = 0
 
       ! Map candidate nodes to segment pairs
-      DO I = 1, INTBUF_TAB(1)%S_CAND_N
-        candidate = INTBUF_TAB(1)%NSV(INTBUF_TAB(1)%CAND_N(I))
-        candidateM = INTBUF_TAB(1)%CAND_E(I)
+      DO I = 1, JLT
+        IF (CAND_N_CUR(I) <= 0 .OR. CAND_N_CUR(I) > INTBUF_TAB(1)%S_NSV) CYCLE
+        candidate = INTBUF_TAB(1)%NSV(CAND_N_CUR(I))
+        candidateM = CAND_E_CUR(I)
+        IF (candidateM <= 0) CYCLE
         
         ! Find which secondary segment contains this candidate node
-        DO J = 1, IGRSURF(1)%NSEG
+        DO J = 1, IGRSURF(SEC_SURF_IDX)%NSEG
           ! Check whether the current candidate node (candidate) is among the four corner nodes
           ! of the current secondary segment (J). If yes, this segment is considered relevant.
           IF (ANY(candidate == IGRSURF_S_TEMP(J, 1:4))) THEN
@@ -118,19 +153,23 @@
           END IF
         END DO
       END DO
-      
+
+      IF (COUNT <= 0) THEN
+        DEALLOCATE(IGRSURF_S_TEMP)
+        DEALLOCATE(found_segments)
+        RETURN
+      END IF
+
       ! Adjacency matrix - filter out invalid entries
       ALLOCATE(ADJA(COUNT, 2))
       J = 0
       DO I = 1, COUNT
-        IF (CAND_SEC_SEG(I) /= 0 .AND. CAND_MST_SEG(I) /= 0) THEN
+        IF (CAND_SEC_SEG(I) > 0 .AND. CAND_MST_SEG(I) > 0) THEN
           J = J + 1
           ADJA(J, 1) = CAND_SEC_SEG(I)
           ADJA(J, 2) = CAND_MST_SEG(I)
         END IF
       END DO
-      COUNT = K
-
       COUNT = J
       J = 1
       
@@ -138,7 +177,7 @@
       DO I = 1, COUNT
         ! Secondary segment nodes
         CAND_SEC_SEG_ID(I, 1) = CAND_SEC_SEG(I)
-        CAND_SEC_SEG_ID(I, 2:5) = IGRSURF(1)%NODES(CAND_SEC_SEG(I), 1:4)
+        CAND_SEC_SEG_ID(I, 2:5) = IGRSURF(SEC_SURF_IDX)%NODES(CAND_SEC_SEG(I), 1:4)
 
         ! Primary segment nodes
         CAND_MST_SEG_ID(I, 1) = CAND_MST_SEG(I)
@@ -172,7 +211,6 @@
       
       ! Cleanup
       DEALLOCATE(IGRSURF_S_TEMP)
-      DEALLOCATE(IGRSURF_M_TEMP)
       DEALLOCATE(found_segments)
       DEALLOCATE(ADJA)
       

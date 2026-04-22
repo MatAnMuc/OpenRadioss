@@ -1367,6 +1367,7 @@ C NEW VARIABLES
               my_real, allocatable :: PRIMARY_SEG_MAT(:,:)
               my_real, allocatable :: SECONDARY_SEG_MAT(:,:)
               LOGICAL :: STS_ACTIVE
+              LOGICAL, PARAMETER :: DEBUG_SWITCH = .FALSE.
 C-----------------------------------------------------------------------------------
   
               type(SPH_WORK_)  :: SPH_WORK   !< working Areas for SPLISSV and SPHPREP
@@ -1394,94 +1395,122 @@ C-----------------------------------------------
         NODE_MAT(i, 3:5) = NODES%X(1:3, i)    ! X, Y, Z coordinates
       end do
       
-      write(*,*)
-      print *, 'NODE MATRIX:'
-      print '(T2, A, T11, A, T20, A, T28, A, T36, A)', 
-     &       'LocalID', 'GlobalID', 'X-Coord', 'Y-Coord', 'Z-Coord'
-      do i = 1, NUMNOD
-          print '(F8.0, F10.0, F8.2, F8.2, F8.2)', NODE_MAT(i, :)
-      end do
+      IF (DEBUG_SWITCH) THEN
+        write(*,*)
+        print *, 'NODE MATRIX:'
+        print '(T2, A, T11, A, T20, A, T28, A, T36, A)', 
+     &         'LocalID', 'GlobalID', 'X-Coord', 'Y-Coord', 'Z-Coord'
+        do i = 1, NUMNOD
+            print '(F8.0, F10.0, F8.2, F8.2, F8.2)', NODE_MAT(i, :)
+        end do
+      END IF
 
 C-----------------------------------------------
 C Build SOLID_ELEMENT_MAT: Element connectivity
 C-----------------------------------------------
       allocate(SOLID_ELEMENT_MAT(NUMELS, 11))
-      print *, ''
-      print *, 'SOLID ELEMENT CONNECTIVITY:'
-      print '(T1, A, T15, A, T32, A, T71, A, T74, A, T82, A)', 
-     &       'ElemType', '<-', 'Nodes (LocalID)', '->', 'prop_ID', 
-     &       'ElementID'
+      IF (DEBUG_SWITCH) THEN
+        print *, ''
+        print *, 'SOLID ELEMENT CONNECTIVITY:'
+        print '(T1, A, T15, A, T32, A, T71, A, T74, A, T82, A)', 
+     &         'ElemType', '<-', 'Nodes (LocalID)', '->', 'prop_ID', 
+     &         'ElementID'
+      END IF
       do i = 1, NUMELS
           SOLID_ELEMENT_MAT(i, :) = IXS((i - 1) * 11 + 1 : i * 11)
-          print '(F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, 
-     &          F8.0, F8.0, F10.0)', SOLID_ELEMENT_MAT(i, :)
+          IF (DEBUG_SWITCH) THEN
+            print '(F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, 
+     &            F8.0, F8.0, F10.0)', SOLID_ELEMENT_MAT(i, :)
+          END IF
       end do    
 
 C-----------------------------------------------
 C Interface Type and Secondary Nodes Information
 C-----------------------------------------------
-      write(*,*) 
-      write(*,*) "Type of interface:", IPARI(7,1)     
-      
-      print *, ''
-      print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
-      DO I = 1, NINTER
-          print *, INTERFACES%INTBUF_TAB(I)%NSV
-      ENDDO
+      IF (DEBUG_SWITCH) THEN
+        write(*,*) 
+        write(*,*) "Type of interface:", IPARI(7,1)     
+        
+        print *, ''
+        print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
+        DO I = 1, NINTER
+            print *, INTERFACES%INTBUF_TAB(I)%NSV
+        ENDDO
+      END IF
 
 C-----------------------------------------------
 C Process PRIMARY Surface (Master Surface for STS)
 C-----------------------------------------------
-      write(*,*)
-      print *, "Internal ID of the selected group of PRIMARY nodes 
-     &         (for STS):", IPARI(46,1)
+      IF (DEBUG_SWITCH) THEN
+        write(*,*)
+        print *, "Internal ID of the selected group of PRIMARY nodes 
+     &           (for STS):", IPARI(46,1)
+      END IF
       
       IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
      .    IPARI(46,1) <= NSURF) THEN
-          print '(A, 1X, A15)', 'Title:', IGRSURF(IPARI(46,1))%TITLE
-          print '(A, 1X, I4)', 'Number of Segments:', 
-     &          IGRSURF(IPARI(46,1))%NSEG
+          IF (DEBUG_SWITCH) THEN
+            print '(A, 1X, A15)', 'Title:', IGRSURF(IPARI(46,1))%TITLE
+            print '(A, 1X, I4)', 'Number of Segments:', 
+     &            IGRSURF(IPARI(46,1))%NSEG
+          END IF
 
           allocate(PRIMARY_SEG_MAT(IGRSURF(IPARI(46,1))%NSEG, 5))
-          print *, "PRIMARY NODES (LocalID):"
-          print '(T1, A, T15, A, T20, A, T39, A)', 
-     &          'LocalElID', '<-', 'Nodes (LocalID)', '->'
+          IF (DEBUG_SWITCH) THEN
+            print *, "PRIMARY NODES (LocalID):"
+            print '(T1, A, T15, A, T20, A, T39, A)', 
+     &            'LocalElID', '<-', 'Nodes (LocalID)', '->'
+          END IF
           do i = 1, IGRSURF(IPARI(46,1))%NSEG
               PRIMARY_SEG_MAT(i, 1) = i  ! Segment local ID
               PRIMARY_SEG_MAT(i, 2:5) = IGRSURF(IPARI(46,1))%NODES(i, 1:4)
-              print '(F8.0, F8.0, F8.0, F8.0, F8.0)', PRIMARY_SEG_MAT(i, :)
+              IF (DEBUG_SWITCH) THEN
+                print '(F8.0, F8.0, F8.0, F8.0, F8.0)', PRIMARY_SEG_MAT(i, :)
+              END IF
           end do
       ELSE
-          print *, "STS interface not active or invalid primary surface ID"
+          IF (DEBUG_SWITCH) THEN
+            print *, "STS interface not active or invalid primary surface ID"
+          END IF
       ENDIF  
 
 C-----------------------------------------------
 C Process SECONDARY Surface (Slave Surface for STS)
 C-----------------------------------------------
-      print *, ''
-      print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
-      DO I = 1, NINTER
-          print *, INTERFACES%INTBUF_TAB(I)%NSV
-      ENDDO
+      IF (DEBUG_SWITCH) THEN
+        print *, ''
+        print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
+        DO I = 1, NINTER
+            print *, INTERFACES%INTBUF_TAB(I)%NSV
+        ENDDO
 
-      write(*,*)
-      print *, "Internal ID of the selected group of SECONDARY nodes:", 1
+        write(*,*)
+        print *, "Internal ID of the selected group of SECONDARY nodes:", 1
+      END IF
       
       IF (NSURF >= 1 .AND. IGRSURF(1)%NSEG > 0) THEN
-          print '(A, 1X, A15)', 'Title:', IGRSURF(1)%TITLE
-          print '(A, 1X, I4)', 'Number of Segments:', IGRSURF(1)%NSEG
+          IF (DEBUG_SWITCH) THEN
+            print '(A, 1X, A15)', 'Title:', IGRSURF(1)%TITLE
+            print '(A, 1X, I4)', 'Number of Segments:', IGRSURF(1)%NSEG
+          END IF
          
           allocate(SECONDARY_SEG_MAT(IGRSURF(1)%NSEG, 5))
-          print *, "SECONDARY NODES (LocalID):"
-          print '(T1, A, T15, A, T20, A, T39, A)', 
-     &          'LocalElID', '<-', 'Nodes (LocalID)', '->'
+          IF (DEBUG_SWITCH) THEN
+            print *, "SECONDARY NODES (LocalID):"
+            print '(T1, A, T15, A, T20, A, T39, A)', 
+     &            'LocalElID', '<-', 'Nodes (LocalID)', '->'
+          END IF
           do i = 1, IGRSURF(1)%NSEG
               SECONDARY_SEG_MAT(i, 1) = i  ! Segment local ID
               SECONDARY_SEG_MAT(i, 2:5) = IGRSURF(1)%NODES(i, 1:4)
-              print '(F8.0, F8.0, F8.0, F8.0, F8.0)', SECONDARY_SEG_MAT(i, :)
+              IF (DEBUG_SWITCH) THEN
+                print '(F8.0, F8.0, F8.0, F8.0, F8.0)', SECONDARY_SEG_MAT(i, :)
+              END IF
           end do
       ELSE
-          print *, "Secondary surface (ID=1) not available or has no segments"
+          IF (DEBUG_SWITCH) THEN
+            print *, "Secondary surface (ID=1) not available or has no segments"
+          END IF
       ENDIF   
                           
 C-----------------------------------------------
@@ -1490,28 +1519,31 @@ C-----------------------------------------------
       IF (STS_ACTIVE) THEN
         IF (ALLOCATED(INTERFACES%INTBUF_TAB)) THEN
           IF (SIZE(INTERFACES%INTBUF_TAB) > 0) THEN
-C           Create temporary IRECTS array from secondary surface nodes
-            CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, 
-     &                             NODES%ITAB)
-C           Remove duplicate nodes from NSV array
-            CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB)
-C           Debug output: Print surface and interface data
-C            CALL WRITE_IGRSURF(INTERFACES%INTBUF_TAB, IGRSURF, 
-C     &                        NODES%ITAB)
+C           Here we are building a Nodelist for the contact search algorithm.
+            ! TODO: TREAT FOR MULTIPLE INTERFACES; Currently only NIN=1 interface is treated.
+            ! TODO: This can be optimized in futur by clean input declaration of the interface and using the interface number.
+            ! IPARI(45,1) is the internal id of the group of secondary nodes.
+            IF (IPARI(13,1)/10 == 1 .AND. IPARI(45,1) > 0 .AND.
+     &          IPARI(45,1) <= NSURF) THEN
+              CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, NODES%ITAB, 1, IPARI(45,1))
+              CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB, 1)
+            ENDIF
           END IF
         END IF
       END IF
       
-      write(*,*)
-      write(*,*) "Unique SECONDARY NODES for the search algorithm"
-      write(*,*) INTERFACES%INTBUF_TAB(1)%NSV
-      write(*,*)
+      IF (DEBUG_SWITCH) THEN
+        write(*,*)
+        write(*,*) "Unique SECONDARY NODES for the search algorithm"
+        write(*,*) INTERFACES%INTBUF_TAB(1)%NSV
+        write(*,*)
+      END IF
       
       !SurfaceIDs
       I = 1
       !CONTACT PARAMETERS
       !DEBUGGING
-      if (I==0) THEN
+      if (DEBUG_SWITCH) THEN
         write(*,*) "IPARI"
         write(*,*) "IPARI(7)",  IPARI(7, 1), ": type of interface"
         write(*,*) "IPARI(3)",  IPARI(3, 1), ": number of secondary nodes in input"
@@ -4363,6 +4395,7 @@ C
               CALL TRACE_OUT(14)
 
               IF (IMON>0) CALL STOPTIME(TIMERS,TIMER_ELEMENT)
+C-----
 C-----
               IF(NUMSPHG/=0)THEN
                 IF (IMONM > 0) CALL STARTIME(TIMERS,48)
@@ -9968,7 +10001,7 @@ C   that will be used for contact detection. The 2D array IGRSURF(1)%NODES
 C   (segments × nodes) is flattened into a 1D array INTBUF_TAB(1)%IRECTS.
 C
 C
-      SUBROUTINE CREATE_IRECTS_TEMP(INTBUF_TAB,IGRSURF,ITAB)
+      SUBROUTINE CREATE_IRECTS_TEMP(INTBUF_TAB,IGRSURF,ITAB,NIN,ISURF)
 C-----------------------------------------------
 C   M o d u l e s
 C----------------------------------------------- 
@@ -9989,6 +10022,8 @@ C-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
       TYPE (SURF_)   , DIMENSION(NSURF)   :: IGRSURF
       INTEGER ITAB(*)
+      INTEGER NIN, ISURF
+      ! ISURF is the internal id of the group of secondary nodes.
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
@@ -9999,30 +10034,30 @@ C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
 C     Safety checks: Validate surface data
-      IF (NSURF < 1) THEN
+      IF (NSURF < 1 .OR. ISURF < 1 .OR. ISURF > NSURF) THEN
           write(*,*) "CREATE_IRECTS_TEMP: ERROR - NSURF < 1"
           RETURN
       ENDIF
       
-      IF (IGRSURF(1)%NSEG <= 0) THEN
+      IF (IGRSURF(ISURF)%NSEG <= 0) THEN
           write(*,*) "CREATE_IRECTS_TEMP: WARNING - No segments in surface"
           RETURN
       ENDIF
       
-      IF (.NOT. ALLOCATED(IGRSURF(1)%NODES)) THEN
+      IF (.NOT. ALLOCATED(IGRSURF(ISURF)%NODES)) THEN
           write(*,*) "CREATE_IRECTS_TEMP: ERROR - IGRSURF(1)%NODES not allocated"
           RETURN
       ENDIF
 
 C     Get dimensions of NODES array
-      num_rows = SHAPE(IGRSURF(1)%NODES)
+      num_rows = SHAPE(IGRSURF(ISURF)%NODES)
       NSEG = num_rows(1)
       NNOD_PER_SEG = num_rows(2)
       
 C     Validate array dimensions
-      IF (NSEG /= IGRSURF(1)%NSEG) THEN
+      IF (NSEG /= IGRSURF(ISURF)%NSEG) THEN
           write(*,*) "CREATE_IRECTS_TEMP: WARNING - Dimension mismatch: ",
-     &              "NSEG = ", IGRSURF(1)%NSEG, ", but array has ", NSEG, " rows"
+     &              "NSEG = ", IGRSURF(ISURF)%NSEG, ", but array has ", NSEG, " rows"
       ENDIF
       
       IF (NNOD_PER_SEG /= 4) THEN
@@ -10031,15 +10066,15 @@ C     Validate array dimensions
       ENDIF
 
 C     Deallocate existing IRECTS if present
-      IF (ALLOCATED(INTBUF_TAB(1)%IRECTS)) THEN
-          DEALLOCATE(INTBUF_TAB(1)%IRECTS)
+      IF (ALLOCATED(INTBUF_TAB(NIN)%IRECTS)) THEN
+          DEALLOCATE(INTBUF_TAB(NIN)%IRECTS)
       END IF
 
 C     Calculate total number of nodes = number of segments × nodes per segment
-      INTBUF_TAB(1)%S_IRECTS = NSEG * NNOD_PER_SEG
+      INTBUF_TAB(NIN)%S_IRECTS = NSEG * NNOD_PER_SEG
       
 C     Allocate IRECTS array
-      ALLOCATE(INTBUF_TAB(1)%IRECTS(INTBUF_TAB(1)%S_IRECTS))
+      ALLOCATE(INTBUF_TAB(NIN)%IRECTS(INTBUF_TAB(NIN)%S_IRECTS))
 
 C     Copy nodes from 2D array (segments × nodes) to 1D array
 C     Order: Segment 1 (nodes 1-4), Segment 2 (nodes 1-4), ...
@@ -10047,18 +10082,18 @@ C     Order: Segment 1 (nodes 1-4), Segment 2 (nodes 1-4), ...
       do I = 1, NSEG
           do J = 1, NNOD_PER_SEG
 C             Skip zero nodes (if any) - they indicate missing nodes in segment
-              IF (IGRSURF(1)%NODES(I,J) > 0) THEN
-                  INTBUF_TAB(1)%IRECTS(K) = IGRSURF(1)%NODES(I,J)
+              IF (IGRSURF(ISURF)%NODES(I,J) > 0) THEN
+                  INTBUF_TAB(NIN)%IRECTS(K) = IGRSURF(ISURF)%NODES(I,J)
                   K = K + 1
               ENDIF
           enddo
       enddo
       
 C     Update S_IRECTS to actual number of nodes copied (if zeros were skipped)
-      IF (K - 1 < INTBUF_TAB(1)%S_IRECTS) THEN
+      IF (K - 1 < INTBUF_TAB(NIN)%S_IRECTS) THEN
           write(*,*) "CREATE_IRECTS_TEMP: WARNING - Some zero nodes skipped. ",
-     &              "Expected ", INTBUF_TAB(1)%S_IRECTS, " nodes, got ", K-1
-          INTBUF_TAB(1)%S_IRECTS = K - 1
+     &              "Expected ", INTBUF_TAB(NIN)%S_IRECTS, " nodes, got ", K-1
+          INTBUF_TAB(NIN)%S_IRECTS = K - 1
 C         Reallocate to actual size (optional - can keep larger size)
       ENDIF
 
@@ -10072,7 +10107,7 @@ C   Creates a unique list of secondary nodes for contact search algorithm.
 C   The algorithm uses a mask-based approach to identify duplicates and
 C   extracts only unique node IDs into INTBUF_TAB%NSV.
 C
-      SUBROUTINE REMOVE_DUPLI(INTBUF_TAB)
+      SUBROUTINE REMOVE_DUPLI(INTBUF_TAB,NIN)
 C-----------------------------------------------
 C   M o d u l e s
 C----------------------------------------------- 
@@ -10090,6 +10125,7 @@ C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
+      INTEGER NIN
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
@@ -10101,21 +10137,21 @@ C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
 C     Safety check: IRECTS must be allocated
-      IF (.NOT. ALLOCATED(INTBUF_TAB(1)%IRECTS)) THEN
+      IF (.NOT. ALLOCATED(INTBUF_TAB(NIN)%IRECTS)) THEN
           write(*,*) "REMOVE_DUPLI: WARNING - INTBUF_TAB(1)%IRECTS not allocated"
           RETURN
       ENDIF
       
-      SIZ_IRECTS = SIZE(INTBUF_TAB(1)%IRECTS)
+      SIZ_IRECTS = SIZE(INTBUF_TAB(NIN)%IRECTS)
       IF (SIZ_IRECTS <= 0) THEN
           write(*,*) "REMOVE_DUPLI: WARNING - IRECTS array is empty"
           RETURN
       ENDIF
       
 C     Validate S_IRECTS matches actual array size
-      IF (INTBUF_TAB(1)%S_IRECTS /= SIZ_IRECTS) THEN
+      IF (INTBUF_TAB(NIN)%S_IRECTS /= SIZ_IRECTS) THEN
           write(*,*) "REMOVE_DUPLI: WARNING - Size mismatch: S_IRECTS = ",
-     &              INTBUF_TAB(1)%S_IRECTS, ", but array size = ", SIZ_IRECTS
+     &              INTBUF_TAB(NIN)%S_IRECTS, ", but array size = ", SIZ_IRECTS
       ENDIF
       
 C     Allocate working arrays
@@ -10128,7 +10164,7 @@ C     First element is always unique (no previous elements to compare)
       
       do i = 2, SIZ_IRECTS
 C         Skip zero or invalid node IDs
-          IF (INTBUF_TAB(1)%IRECTS(i) <= 0) THEN
+          IF (INTBUF_TAB(NIN)%IRECTS(i) <= 0) THEN
               mask(i) = .FALSE.
               num_duplicates = num_duplicates + 1
               CYCLE
@@ -10137,9 +10173,9 @@ C         Skip zero or invalid node IDs
 C         Check if current element appears in previous elements
           do j = 1, i-1
 C             Skip comparison with invalid nodes
-              IF (INTBUF_TAB(1)%IRECTS(j) <= 0) CYCLE
+              IF (INTBUF_TAB(NIN)%IRECTS(j) <= 0) CYCLE
               
-              if (INTBUF_TAB(1)%IRECTS(j) == INTBUF_TAB(1)%IRECTS(i)) THEN
+              if (INTBUF_TAB(NIN)%IRECTS(j) == INTBUF_TAB(NIN)%IRECTS(i)) THEN
                   mask(i) = .FALSE.
                   num_duplicates = num_duplicates + 1
                   EXIT  ! Found duplicate, no need to check further
@@ -10153,10 +10189,10 @@ C     Count unique elements
 C     Validate that we found at least one unique element
       IF (n <= 0) THEN
           write(*,*) "REMOVE_DUPLI: ERROR - No unique nodes found!"
-          IF (ALLOCATED(INTBUF_TAB(1)%NSV)) THEN
-              DEALLOCATE(INTBUF_TAB(1)%NSV)
+          IF (ALLOCATED(INTBUF_TAB(NIN)%NSV)) THEN
+              DEALLOCATE(INTBUF_TAB(NIN)%NSV)
           ENDIF
-          INTBUF_TAB(1)%S_NSV = 0
+          INTBUF_TAB(NIN)%S_NSV = 0
           DEALLOCATE(mask)
           RETURN
       ENDIF
@@ -10169,8 +10205,8 @@ C     Extract unique elements manually
       do I = 1, SIZ_IRECTS
           if (mask(I)) THEN
 C             Additional safety check: skip zero nodes
-              IF (INTBUF_TAB(1)%IRECTS(I) > 0) THEN
-                  unique_arr(J) = INTBUF_TAB(1)%IRECTS(I)
+              IF (INTBUF_TAB(NIN)%IRECTS(I) > 0) THEN
+                  unique_arr(J) = INTBUF_TAB(NIN)%IRECTS(I)
                   J = J + 1
               ENDIF
           endif
@@ -10182,13 +10218,13 @@ C     Update actual count (in case zeros were skipped)
 C     Update NSV array with unique nodes
       IF (n > 0) THEN
 C         Deallocate existing NSV if present
-          IF (ALLOCATED(INTBUF_TAB(1)%NSV)) THEN
-              DEALLOCATE(INTBUF_TAB(1)%NSV)
+          IF (ALLOCATED(INTBUF_TAB(NIN)%NSV)) THEN
+              DEALLOCATE(INTBUF_TAB(NIN)%NSV)
           ENDIF
           
-          INTBUF_TAB(1)%S_NSV = n
-          ALLOCATE(INTBUF_TAB(1)%NSV(INTBUF_TAB(1)%S_NSV))
-          INTBUF_TAB(1)%NSV(1:n) = unique_arr(1:n)
+          INTBUF_TAB(NIN)%S_NSV = n
+          ALLOCATE(INTBUF_TAB(NIN)%NSV(INTBUF_TAB(NIN)%S_NSV))
+          INTBUF_TAB(NIN)%NSV(1:n) = unique_arr(1:n)
           
 C         Optional: Debug output
           !write(*,*) "REMOVE_DUPLI: Found ", n, " unique nodes out of ", 
@@ -10196,10 +10232,10 @@ C         Optional: Debug output
       ELSE
 C         No valid unique elements found - set empty array
           write(*,*) "REMOVE_DUPLI: WARNING - No valid unique nodes found"
-          IF (ALLOCATED(INTBUF_TAB(1)%NSV)) THEN
-              DEALLOCATE(INTBUF_TAB(1)%NSV)
+          IF (ALLOCATED(INTBUF_TAB(NIN)%NSV)) THEN
+              DEALLOCATE(INTBUF_TAB(NIN)%NSV)
           ENDIF
-          INTBUF_TAB(1)%S_NSV = 0
+          INTBUF_TAB(NIN)%S_NSV = 0
       ENDIF
       
 C     Clean up working arrays

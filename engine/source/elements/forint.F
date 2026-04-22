@@ -272,7 +272,7 @@ C-----------------------------------------------
       my_real, DIMENSION(MVSIZ,6) :: SVIS
       TYPE(G_BUFEL_) ,POINTER :: GBUF
       integer :: fake_size = 0
-      LOGICAL :: DUMP_Q1NP_STATE = .TRUE.
+      LOGICAL :: DUMP_Q1NP_STATE = .FALSE.
 C======================================================================|
        ALLOCATE(FX(MVSIZ,64),FY(MVSIZ,64),FZ(MVSIZ,64),STAT=IERROR)
        ALLOCATE(MX(MVSIZ,4),MY(MVSIZ,4),MZ(MVSIZ,4),STAT=IERROR)
@@ -1623,7 +1623,7 @@ C
 
       IF (NUMELQ1NP_G > 0 .AND. IPRI == 1) THEN
         IF (DUMP_Q1NP_STATE) THEN
-         CALL Q1NP_DUMP_HIST_STATE(TT, X, ITAB)
+         CALL Q1NP_DUMP_HIST_STATE(TT, X, ITAB, NUMNOD)
         ENDIF
       ENDIF
 C

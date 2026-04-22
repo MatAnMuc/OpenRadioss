@@ -164,7 +164,7 @@
       my_real,            INTENT(INOUT) :: TF(:)
       my_real,            INTENT(INOUT) :: BUFMAT(:)
       my_real,            INTENT(INOUT) :: FV(MAXFUNC)
-      my_real,            INTENT(INOUT) :: PARTSAV(20,NPART)
+      my_real,            INTENT(INOUT) :: PARTSAV(NPSAV,NPART)
       my_real,            INTENT(INOUT) :: GRESAV(:)
       my_real,            INTENT(INOUT) :: GRTH(:)
       my_real,            INTENT(INOUT) :: DT2T
@@ -475,7 +475,7 @@
 
             NGL_ELEM(IEL) = KQ1NP_TAB(5,IQ1NP)
 
-            ! Per-element knot vectors (heterogeneous NX/NY via knot_set_id in KQ1NP_TAB(15,*)).
+            ! Per-element knot vectors (heterogeneous NX/NY via knot_set_id in KQ1NP_TAB(15,:)).
             KNOT_SET_ID = KQ1NP_TAB(15, IQ1NP)
             IF (Q1NP_NKNOT_SETS_G > 0 .AND. KNOT_SET_ID > 0 .AND. &
      &          KNOT_SET_ID <= Q1NP_NKNOT_SETS_G) THEN
@@ -1219,9 +1219,9 @@
               END DO
             END DO
 
-            CALL IGE3DBILAN(PARTSAV, GBUF%EINT, GBUF%RHO, VOLG, VX_BAL, VY_BAL, VZ_BAL, IPARTS, &
-     &                      GBUF%VOL, GRESAV, GRTH, IGRTH, XX_BAL, YY_BAL, ZZ_BAL, NCTRL_ELEM(1) + 4, &
-     &                      ITASK, IPARG(1,NG), SENSORS)
+ !           CALL IGE3DBILAN(PARTSAV, GBUF%EINT, GBUF%RHO, VOLG, VX_BAL, VY_BAL, VZ_BAL, IPARTS, &
+ !    &                      GBUF%VOL, GRESAV, GRTH, IGRTH, XX_BAL, YY_BAL, ZZ_BAL, NCTRL_ELEM(1) + 4, &
+ !    &                      ITASK, IPARG(1,NG), SENSORS)
 
             DEALLOCATE(VX_BAL, VY_BAL, VZ_BAL, XX_BAL, YY_BAL, ZZ_BAL)
           END IF
@@ -1258,7 +1258,7 @@
         SUBROUTINE Q1NP_CHAR_LEN(IEL_LOCAL, DELTAX_OUT)
           INTEGER, INTENT(IN) :: IEL_LOCAL
           my_real, INTENT(OUT) :: DELTAX_OUT
-          my_real, PARAMETER :: SPAN_SCALE = 0.25
+          my_real, PARAMETER :: SPAN_SCALE = 0.2
           my_real :: TOP_1_XYZ(3), TOP_2_XYZ(3), TOP_3_XYZ(3), TOP_4_XYZ(3)
           my_real :: BOT_1_XYZ(3), BOT_2_XYZ(3), BOT_3_XYZ(3), BOT_4_XYZ(3)
           my_real :: LU_TOP_1, LU_TOP_2, LV_TOP_1, LV_TOP_2

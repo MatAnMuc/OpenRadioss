@@ -103,6 +103,7 @@ C-----------------------------------------------
       USE I18DST3_MOD , ONLY : I18DST3
       USE I18FOR3_MOD , ONLY : I18FOR3
       USE sts_gp_state_mod
+      USE Q1NP_CONTACT_DRIVER_MOD, ONLY: Q1NP_CONTACT_DATA_READY, Q1NP_CONTACT_DRIVER_INT7
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -268,10 +269,12 @@ C-----------------------------------------------
       INTEGER :: NRTM
       LOGICAL TYPE18
       INTEGER :: IDIR
+      INTEGER :: SEC_SURF_ID_STS
+      LOGICAL, SAVE :: INT7_CONTACT_MODE_MSG_DONE = .FALSE. ! flag to check if the contact mode message has been printed (initialization of the contact algorithm)
 C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
-      STS_ACTIVE = .TRUE. ! Set to FALSE to use old NTS algorithm
+      STS_ACTIVE = .TRUE. ! .FALSE. = NTS (node-to-surface); .TRUE. = STS (segment-to-segment)
       IF (STS_ACTIVE) THEN
         ASS_FLAG = 2  ! New STS assembly algorithm
       ELSE
@@ -311,6 +314,35 @@ C adaptive meshing
       STOPT = INTBUF_TAB%VARIABLES(11)
       IF(STARTT > TT) RETURN !precondition
       IF(TT > STOPT)  RETURN !precondition
+C-----------------------------------------------
+C     One-time diagnostic message: which contact branch applies (first cycle).
+C-----------------------------------------------
+      IF (NTY == 7 .AND. JTASK == 1 .AND. .NOT. INT7_CONTACT_MODE_MSG_DONE) THEN
+        IF (ABS(TT) <= 1.0E-20 .OR. NCYCLE <= 0) THEN
+          IF (Q1NP_CONTACT_DATA_READY()) THEN
+            WRITE(6,*) 'INT7 (NIN=', NIN, '): contact mode = Q1NP (NURBS)'
+          ELSE IF (STS_ACTIVE) THEN
+            WRITE(6,*) 'INT7 (NIN=', NIN, '): contact mode = STS (segment-to-segment)'
+          ELSE
+            WRITE(6,*) 'INT7 (NIN=', NIN, '): contact mode = NTS (node-to-surface)'
+          ENDIF
+          INT7_CONTACT_MODE_MSG_DONE = .TRUE.
+        ENDIF
+      ENDIF
+C-----------------------------------------------
+C     Type 7: when Q1NP data exists, run Q1NP and skip legacy STS/NTS.
+C-----------------------------------------------
+      IF (NTY == 7) THEN
+        IF (Q1NP_CONTACT_DATA_READY()) THEN
+          CALL MY_BARRIER()
+          IF (JTASK == 1) THEN
+            CALL Q1NP_CONTACT_DRIVER_INT7(NCYCLE, NUMNOD, X, A, STIFN, TT)
+          ENDIF
+          CALL MY_BARRIER()
+          RETURN
+        ENDIF
+      ENDIF
+C-----------------------------------------------
       FRIC = INTBUF_TAB%VARIABLES(1)
       GAP = INTBUF_TAB%VARIABLES(2)
       GAPMIN = INTBUF_TAB%VARIABLES(13)
@@ -768,10 +800,10 @@ C==========================================================
 C==========================================================
 C OLD NTS ALGORITHM
 C==========================================================
-        WRITE(*,*) 
-        WRITE(*,*) "***********************************"
-        WRITE(*,*) "NTS ALGORITHM STARTED"
-        WRITE(*,*) "***********************************"
+        ! WRITE(*,*) 
+        ! WRITE(*,*) "***********************************"
+        ! WRITE(*,*) "NTS ALGORITHM STARTED"
+        ! WRITE(*,*) "***********************************"
 
         !----------------------------------------------------------
         ! Distance calculation and projection for contact detection
@@ -936,13 +968,16 @@ C==========================================================
 C
 
         ! Find contact partners/candidates only once
-        CALL STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, CAND_SEC_SEG,
-     &   INTBUF_TAB%IRECTM, CONT_ELEMENT, COUNT, IGRSURF,
-     &   CAND_SEC_SEG_ID, CAND_MST_SEG_ID, MAX_STS_SIZE_ACTUAL)
+        SEC_SURF_ID_STS = 0
+        IF (IPARI(13,NIN)/10 == 1) SEC_SURF_ID_STS = IPARI(45,NIN)
+        CALL STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, NUMNOD, IPARI(4,NIN), CAND_SEC_SEG,
+     &   JLT, CAND_N_N, CAND_E_N, INTBUF_TAB%IRECTM, CONT_ELEMENT,
+     &   COUNT, IGRSURF, CAND_SEC_SEG_ID, CAND_MST_SEG_ID,
+     &   MAX_STS_SIZE_ACTUAL, NSURF, SEC_SURF_ID_STS, IPARI(46,NIN))
 
-        WRITE(*,*) "---------------------------------------------------"
-        WRITE(*,*) "STS: Found ", COUNT, " potentional contact element pairs"
-        WRITE(*,*)
+        ! WRITE(*,*) "---------------------------------------------------"
+        ! WRITE(*,*) "STS: Found ", COUNT, " potentional contact element pairs"
+        ! WRITE(*,*)
 
         !-------------------------------------------------------------------------------
         ! Friction model : computation of friction coefficients based on Material of connected Parts
@@ -983,9 +1018,9 @@ C
         ! -----------------------
         ! Try GAUSS SEARCH ALGORITHM
         ! -----------------------
-        WRITE(*,*) "***********************************"
-        WRITE(*,*) "STS - GAUSS SEARCH ALGORITHM STARTED"
-        WRITE(*,*) "***********************************"
+        ! WRITE(*,*) "***********************************"
+        ! WRITE(*,*) "STS - GAUSS SEARCH ALGORITHM STARTED"
+        ! WRITE(*,*) "***********************************"
 
         OPTION = 0 !FOR GAUSS STS ALGORITHM
         QFRICT = 0.d0 !Friction energy
@@ -995,20 +1030,20 @@ C
      &   CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
      &   load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
      &   FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
-     &   V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
+     &   V, MS, NUMNOD, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
      &   INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
         !IMPACT_glob indicates if any contact was found
 
         ! If no contact found with GAUSS algorithm, try LOBATTO algorithm
         IF (IMPACT_glob == 0) THEN
-            WRITE(*,*) "NO IMPACT FOUND WITH GAUSS SEARCH ALGORITHM"
+            ! WRITE(*,*) "NO IMPACT FOUND WITH GAUSS SEARCH ALGORITHM"
 
             ! -----------------------
             ! Try LOBATTO SEARCH ALGORITHM
             ! -----------------------
-            WRITE(*,*) "***********************************"
-            WRITE(*,*) "STS - LOBATTO SEARCH ALGORITHM STARTED"
-            WRITE(*,*) "***********************************"
+            ! WRITE(*,*) "***********************************"
+            ! WRITE(*,*) "STS - LOBATTO SEARCH ALGORITHM STARTED"
+            ! WRITE(*,*) "***********************************"
 
             OPTION = 1 !FOR LOBATTO STS ALGORITHM
             QFRICT = 0.d0
@@ -1017,11 +1052,11 @@ C
      &      CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
      &      load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
      &      FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, IFQ, DT1, DT12,
-     &      V, MS, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
+     &      V, MS, NUMNOD, INTBUF_TAB%CAND_F, ALPHA0, INTBUF_TAB%IFPEN, INTTH, QFRICT,
      &      INTBUF_TAB, GAP, XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
           
             IF (IMPACT_glob == 0) THEN
-                WRITE(*,*) "NO IMPACT FOUND WITH LOBATTO SEARCH ALGORITHM"
+                ! WRITE(*,*) "NO IMPACT FOUND WITH LOBATTO SEARCH ALGORITHM"
             ENDIF  
         ENDIF
 
@@ -1090,4 +1125,3 @@ C       I7KGLO = 1 => mis ds inttri
 C
       RETURN
          END
-
