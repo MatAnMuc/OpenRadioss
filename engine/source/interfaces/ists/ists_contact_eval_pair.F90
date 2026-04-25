@@ -72,7 +72,7 @@
       real*8  node_stiff(8)
       my_real V(3,NUMNOD), MS(NUMNOD)
       my_real CAND_F(8,MAX_STS_SIZE)
-      INTEGER IFPEN(:)
+      INTEGER IFPEN(MAX_STS_SIZE)
       my_real FRICC(MVSIZ), FRIC_COEFS(MVSIZ,10), VISCFFRIC(MVSIZ)
       my_real XMU(MVSIZ), ALPHA0
       my_real EFRICT, QFRICT

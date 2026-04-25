@@ -44,7 +44,7 @@
       my_real XMU(MVSIZ), DT1, DT12, ALPHA0
       my_real V(3,NUMNOD), MS(NUMNOD)
       my_real CAND_F(8,MAX_STS_SIZE_ACTUAL)
-      INTEGER IFPEN(:)
+      INTEGER IFPEN(MAX_STS_SIZE_ACTUAL)
       INTEGER MFROT, IFQ, INTTH
       my_real QFRICT
       my_real GAP  ! Gap value from user input
