@@ -18,7 +18,7 @@
      &                   p_friction, EFRICT, QFRICT, INTTH, node_ids, &
      &                   CALC_FRICTION, XI1_HIST, XI2_HIST, &
      &                   TTRIAL1_HIST, TTRIAL2_HIST, MAX_STS_SIZE, NUMNOD, GAP, &
-     &                   CAND_SEC_SEG_ID)
+     &                   CAND_SEC_SEG_ID, MAX_PENETRATION_OUT)
 !-----------------------------------------------
 !   M o d u l e s   /   I m p l i c i t   T y p e s
 !-----------------------------------------------
@@ -82,6 +82,7 @@
       REAL*8 TTRIAL2_HIST(MAX_STS_SIZE,2,2)  ! History of T_trial(2) per Gauss poin
       my_real GAP  ! Gap value from user input
       INTEGER CAND_SEC_SEG_ID(MAX_STS_SIZE,5)
+      REAL*8 MAX_PENETRATION_OUT
 !     interface to global gp index function
       INTEGER GET_GLOBAL_GP_INDEX
 !-----------------------------------------------
@@ -132,6 +133,7 @@
 !   I n i t i a l i z a t i o n
 !-----------------------------------------------
       IMPACT = 0
+      MAX_PENETRATION_OUT = 0.0D0
       ip = 2 ! Quadrature order
       
       ! Calculate maximum global GP index for bounds checking
@@ -254,6 +256,7 @@
           ! Penetration detected
           IMPACT = 1
           penetr = PENE
+          MAX_PENETRATION_OUT = MAX(MAX_PENETRATION_OUT, DABS(PENE))
           
           ! Calculate penalty parameter
           d1 = STIF(1) * 1.0d0

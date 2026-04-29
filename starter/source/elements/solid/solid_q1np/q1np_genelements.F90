@@ -53,7 +53,7 @@
         use precision_mod, only : WP
         use constant_mod, only : ZERO, ONE, HALF, TWO
         implicit none
-  !C     Control of optional CSV debug export (kept ON by default)
+  !C     Control of optional CSV debug export for visualization
         logical :: q1np_export_csv = .FALSE.
       contains
 !C

@@ -18,7 +18,7 @@
       contains
 !
         subroutine q1np_mass3( &
-     &      rho, ms, partsav, x, v, &
+     &      rho, ms, mssa, partsav, x, v, &
      &      fill, iparg, elbuf_tab, kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
      &      numelq1np_in, npropm, nummat, pm, &
      &      numels, numnod, npart, q1np_ktab_g)
@@ -41,6 +41,7 @@
 
           real(kind=WP), intent(in)    :: fill(numels)
           real(kind=WP), intent(inout) :: ms(numnod)
+          real(kind=WP), intent(inout) :: mssa(numels)
           real(kind=WP), intent(inout) :: partsav(20,npart)
           real(kind=WP), intent(inout) :: x(3,numnod)
           real(kind=WP), intent(inout) :: v(3,numnod)
@@ -56,7 +57,7 @@
           integer :: nknot_u, nknot_v
           integer :: n_top, n_total, nx, ny
           integer :: node_id
-          real(kind=WP) :: rho_elem, fill_fac
+          real(kind=WP) :: rho_elem, rho_from_gbuf, rho_from_pm, fill_fac, fill_in
           real(kind=WP) :: xi, eta, zeta, vol_gp
           real(kind=WP) :: xx, yy, zz, xy, yz, zx
           real(kind=WP) :: mass_node_k, mass_total_el
@@ -138,14 +139,23 @@
 !-----------------------------------------------------------------------
 !     Determine element density (rho * fill_factor)
 !-----------------------------------------------------------------------
-            if (mid > 0) then
-              rho_elem = pm(1, mid)
-            else
-              rho_elem = rho(iel_hex8)
+            rho_from_gbuf = ZERO
+            rho_from_pm   = ZERO
+            if (iel_hex8 > 0 .and. iel_hex8 <= size(rho)) then
+              rho_from_gbuf = rho(iel_hex8)
+            end if
+            if (mid > 0 .and. mid <= nummat) then
+              rho_from_pm = pm(1, mid)
+            end if
+            rho_elem = rho_from_gbuf
+            if (rho_elem <= ZERO) rho_elem = rho_from_pm
+            fill_in = ZERO
+            if (iel_hex8 > 0 .and. iel_hex8 <= numels) then
+              fill_in = fill(iel_hex8)
             end if
             fill_fac = ONE
-            if (fill(iel_hex8) > ZERO) then
-              fill_fac = fill(iel_hex8)
+            if (fill_in > ZERO) then
+              fill_fac = fill_in
             end if
             rho_elem = fill_fac * rho_elem
 !-----------------------------------------------------------------------
@@ -245,6 +255,9 @@
             do k = 1, n_total
               mass_total_el = mass_total_el + mass_node(k)
             end do
+            if (iel_hex8 > 0 .and. iel_hex8 <= numels) then
+              mssa(iel_hex8) = mass_total_el
+            end if
             partsav(1,ip) = partsav(1,ip) + mass_total_el
 !
             do k = 1, n_total

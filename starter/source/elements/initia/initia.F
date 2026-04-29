@@ -438,7 +438,7 @@ C      INTEGER *8 I8MI(6,NUMNOD)
       my_real, DIMENSION(:), ALLOCATABLE ::
      .    MBUFEL_TMP, MDEPL_TMP,PARTSAV,MCPS,MCPSX,
      .    MS_LAYERC,ZI_LAYERC, MSZ2C,ZPLY,PARTSAV1_PON,MCPP,
-     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8
+     .    RHO_HEX8,VOLU_HEX8,RHOCP_HEX8,RHOF_HEX8,FRAC_HEX8,FILL_HEX8
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: IRIG_NODE, CONNEC
       my_real, DIMENSION(:), ALLOCATABLE :: PART_AREA,ELE_AREA
@@ -2280,6 +2280,11 @@ C       Allocate temporary arrays for Q1Np mass calculation
           CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,
      .                C1='FRAC_HEX8')
         ENDIF
+        ALLOCATE(FILL_HEX8(NUMELS),STAT=STAT)
+        IF(STAT /= 0) THEN
+          CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,
+     .                C1='FILL_HEX8')
+        ENDIF
 
 C=======================================================================
 C       1.Step: Initialize arrays to zero
@@ -2289,6 +2294,7 @@ C=======================================================================
         RHOCP_HEX8(1:NUMNOD) = ZERO
         RHOF_HEX8(1:NUMELS) = ZERO
         FRAC_HEX8(1:NUMELS) = ZERO
+        FILL_HEX8(1:NUMELS) = ZERO
         
 C=======================================================================
 C       2.Step: Extract RHO from GBUF%RHO for all HEX8 elements
@@ -2315,6 +2321,14 @@ C=======================================================================
                 ENDIF
               ENDDO
             ENDIF
+            IF (ASSOCIATED(GBUF%FILL)) THEN
+              DO I=1,NEL
+                IEL = NFT + I
+                IF (IEL <= NUMELS) THEN
+                  FILL_HEX8(IEL) = GBUF%FILL(I)
+                ENDIF
+              ENDDO
+            ENDIF
 
           ENDIF
         ENDDO
@@ -2323,8 +2337,8 @@ C=======================================================================
 C       3.Step: Call Q1Np mass calculation routine
 C=======================================================================
         CALL Q1NP_MASS3(
-     .     RHO_HEX8, MS, PARTSAV, X, V,
-     .     FILL, IPARG, ELBUF_TAB, KQ1NP_TAB, IQ1NP_TAB_Q1NP, IQ1NP_BULK_TAB_Q1NP,
+     .     RHO_HEX8, MS, MSSA, PARTSAV, X, V,
+     .     FILL_HEX8, IPARG, ELBUF_TAB, KQ1NP_TAB, IQ1NP_TAB_Q1NP, IQ1NP_BULK_TAB_Q1NP,
      .     NUMELQ1NP_G, NPROPM, NUMMAT, PM,
      .     NUMELS, NUMNOD, NPART, Q1NP_KTAB_G)
 
@@ -2336,6 +2350,7 @@ C=======================================================================
         IF(ALLOCATED(RHOCP_HEX8)) DEALLOCATE(RHOCP_HEX8)
         IF(ALLOCATED(RHOF_HEX8)) DEALLOCATE(RHOF_HEX8)
         IF(ALLOCATED(FRAC_HEX8)) DEALLOCATE(FRAC_HEX8)
+        IF(ALLOCATED(FILL_HEX8)) DEALLOCATE(FILL_HEX8)
       ENDIF
 C=======================================================================
 C       5.Step: Deallocate Q1Np replacement flag array from module
@@ -3852,4 +3867,3 @@ C----------spring w/ NG=0
 C
       RETURN
       END
-

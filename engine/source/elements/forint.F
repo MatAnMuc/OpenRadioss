@@ -1132,7 +1132,7 @@ C
      7         SNPC, NUMGEO, NUMNOD, NUMELS, NUMELQ, NGROUP,
      8         SBUFMAT, STF, NUMMAT, NTABLE, NSVOIS, IRESP,
      9         IDEL7NOK, MAXFUNC, USERL_AVAIL, IMON_MAT, impl_s,
-     A         idyna, IDTMIN, DT, ITAB, SENSORS)
+     A         idyna, IDTMIN, DT, SENSORS)
              
              ELSE
 

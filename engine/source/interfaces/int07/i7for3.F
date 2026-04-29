@@ -178,6 +178,9 @@ C-----------------------------------------------
      .        NA1,NA2,IPROJ,IDTM,PP,PPL,ITYPSUB
       LOGICAL :: ISS1,ISS2,IMS1,IMS2
       INTEGER JSUB,KSUB,JJ,KK,IN,NSUB
+      INTEGER LUX_NTS
+      LOGICAL FILE_EXISTS_NTS, NTS_CSV_INIT
+      LOGICAL, PARAMETER :: ENABLE_NTS_CSV_EXPORT = .FALSE.
       my_real
      .   FXT(MVSIZ),FYT(MVSIZ),FZT(MVSIZ),
      .   N1(MVSIZ), N2(MVSIZ), N3(MVSIZ), PENE(MVSIZ),
@@ -212,7 +215,10 @@ C-----------------------------------------------
      .   AN(NFORTH) ,BN(NFORTH) ,NEP1 ,NEP2 ,NEP ,C11 ,C22 ,ANS , EP ,SIGNC
       my_real
      .   FSAVSUB1(24,NISUB),IMPX,IMPY,IMPZ,BB,GAPR,DGAP,GAPP
+      my_real FORCE_NORM_NTS, FT_MAG_NTS
       my_real  DISTP(MVSIZ)
+      SAVE NTS_CSV_INIT
+      DATA NTS_CSV_INIT /.FALSE./
 C-----------------------------------------------
 C      1 .. JLT : all impacts
 C          1 .. JLT-JLT_TIED     : Standard TYPE7 formulation
@@ -3089,6 +3095,35 @@ C      if type7 sym of type19 opposite sign for tangential force -> forc_sign = 
       FSAV(27) = FSAV(27) + ECONVT- (FHEATS+FHEATM)*QFRICT
       FSAV(28) = FSAV(28) + ECONTDT
 #include "lockoff.inc"
+C
+      IF (ENABLE_NTS_CSV_EXPORT) THEN
+        IF (.NOT.NTS_CSV_INIT) THEN
+          INQUIRE(FILE='nts_contact_forces.csv', EXIST=FILE_EXISTS_NTS)
+          IF (FILE_EXISTS_NTS) THEN
+            OPEN(NEWUNIT=LUX_NTS, FILE='nts_contact_forces.csv',
+     .           STATUS='REPLACE', ACTION='WRITE')
+          ELSE
+            OPEN(NEWUNIT=LUX_NTS, FILE='nts_contact_forces.csv',
+     .           STATUS='NEW', ACTION='WRITE')
+          ENDIF
+          WRITE(LUX_NTS,'(A)')
+     .    'cycle,time,interface_id,entity_id,fx,fy,fz,force_norm,fn,ft,n_pairs,max_penetration'
+          NTS_CSV_INIT = .TRUE.
+        ELSE
+          OPEN(NEWUNIT=LUX_NTS, FILE='nts_contact_forces.csv',
+     .         STATUS='OLD', ACTION='WRITE', POSITION='APPEND')
+        ENDIF
+        DO I=1,JLT
+          FORCE_NORM_NTS = SQRT(FXI(I)*FXI(I) + FYI(I)*FYI(I) + FZI(I)*FZI(I))
+          FT_MAG_NTS = SQRT(MAX(ZERO,FXT(I)*FXT(I)+FYT(I)*FYT(I)+FZT(I)*FZT(I)))
+          WRITE(LUX_NTS,'(I0,'','',ES23.15,'','',I0,'','',I0)',ADVANCE='NO')
+     .      NCYCLE, TT, -ABS(NOINT), INDEX(I)
+          WRITE(LUX_NTS,
+     .    '('','',ES23.15,'','',ES23.15,'','',ES23.15,'','',ES23.15,'','',ES23.15,'','',ES23.15,'','',I0,'','',ES23.15)')
+     .      FXI(I), FYI(I), FZI(I), FORCE_NORM_NTS, ABS(FNI(I)), FT_MAG_NTS, 1, PENE(I)
+        ENDDO
+        CLOSE(LUX_NTS)
+      ENDIF
 C
       IF(ISENSINT(1)/=0) THEN
         DO I=1,JLT

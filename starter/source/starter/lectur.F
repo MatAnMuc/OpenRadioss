@@ -905,7 +905,8 @@ C     Prototype: smooth (generate Q1NP for) SURF IDs 100 and 200.
       INTEGER IEL, IEL_HEX8, OFFSET_CTRL, OFFSET_BULK, N_CTRL
       INTEGER NODE_BULK(4), NODE_CP
       INTEGER NP_U_Q1NP, NP_V_Q1NP, NP_T_Q1NP
-      INTEGER GP_INDEX, IT
+      INTEGER GP_INDEX, IT, PROC
+      INTEGER NODE_SRC, Q1NP_FRONT_MISSING
 C
       INTEGER, DIMENSION(:,:), ALLOCATABLE :: KQ1NP_TAB
       INTEGER, DIMENSION(:),   ALLOCATABLE :: IQ1NP_TAB
@@ -4750,11 +4751,9 @@ C-----------------------------------------------------------------------
      .                           MSGTYPE=MSGERROR,
      .                           C1='KNOD2ELS_NEW')
                   ELSE
-                    KNOD2ELS_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELS))) =
-     .                           KNOD2ELS(1:MIN(NUMNOD0+1,SIZE(KNOD2ELS)))
-                    IF (NUMNOD+1 > NUMNOD0+1) THEN
-                      KNOD2ELS_NEW(NUMNOD0+2:NUMNOD+1) = 0
-                    ENDIF
+                    KNOD2ELS_NEW = 0
+                    KNOD2ELS_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELS))) =
+     .                           KNOD2ELS(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELS)))
                     DEALLOCATE(KNOD2ELS,STAT=stat)
                     CALL MOVE_ALLOC(KNOD2ELS_NEW,KNOD2ELS)
                   ENDIF
@@ -4768,11 +4767,9 @@ C-----------------------------------------------------------------------
      .                           MSGTYPE=MSGERROR,
      .                           C1='KNOD2ELC_NEW')
                   ELSE
-                    KNOD2ELC_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELC))) =
-     .                           KNOD2ELC(1:MIN(NUMNOD0+1,SIZE(KNOD2ELC)))
-                    IF (NUMNOD+1 > NUMNOD0+1) THEN
-                      KNOD2ELC_NEW(NUMNOD0+2:NUMNOD+1) = 0
-                    ENDIF
+                    KNOD2ELC_NEW = 0
+                    KNOD2ELC_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELC))) =
+     .                           KNOD2ELC(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELC)))
                     DEALLOCATE(KNOD2ELC,STAT=stat)
                     CALL MOVE_ALLOC(KNOD2ELC_NEW,KNOD2ELC)
                   ENDIF
@@ -4786,11 +4783,9 @@ C-----------------------------------------------------------------------
      .                           MSGTYPE=MSGERROR,
      .                           C1='KNOD2ELTG_NEW')
                   ELSE
-                    KNOD2ELTG_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELTG))) =
-     .                           KNOD2ELTG(1:MIN(NUMNOD0+1,SIZE(KNOD2ELTG)))
-                    IF (NUMNOD+1 > NUMNOD0+1) THEN
-                      KNOD2ELTG_NEW(NUMNOD0+2:NUMNOD+1) = 0
-                    ENDIF
+                    KNOD2ELTG_NEW = 0
+                    KNOD2ELTG_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELTG))) =
+     .                           KNOD2ELTG(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELTG)))
                     DEALLOCATE(KNOD2ELTG,STAT=stat)
                     CALL MOVE_ALLOC(KNOD2ELTG_NEW,KNOD2ELTG)
                   ENDIF
@@ -4804,11 +4799,9 @@ C-----------------------------------------------------------------------
      .                           MSGTYPE=MSGERROR,
      .                           C1='KNOD2EL1D_NEW')
                   ELSE
-                    KNOD2EL1D_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2EL1D))) =
-     .                           KNOD2EL1D(1:MIN(NUMNOD0+1,SIZE(KNOD2EL1D)))
-                    IF (NUMNOD+1 > NUMNOD0+1) THEN
-                      KNOD2EL1D_NEW(NUMNOD0+2:NUMNOD+1) = 0
-                    ENDIF
+                    KNOD2EL1D_NEW = 0
+                    KNOD2EL1D_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2EL1D))) =
+     .                           KNOD2EL1D(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2EL1D)))
                     DEALLOCATE(KNOD2EL1D,STAT=stat)
                     CALL MOVE_ALLOC(KNOD2EL1D_NEW,KNOD2EL1D)
                   ENDIF
@@ -4822,11 +4815,9 @@ C-----------------------------------------------------------------------
      .                           MSGTYPE=MSGERROR,
      .                           C1='KNOD2ELQ_NEW')
                   ELSE
-                    KNOD2ELQ_NEW(1:MIN(NUMNOD0+1,SIZE(KNOD2ELQ))) =
-     .                           KNOD2ELQ(1:MIN(NUMNOD0+1,SIZE(KNOD2ELQ)))
-                    IF (NUMNOD+1 > NUMNOD0+1) THEN
-                      KNOD2ELQ_NEW(NUMNOD0+2:NUMNOD+1) = 0
-                    ENDIF
+                    KNOD2ELQ_NEW = 0
+                    KNOD2ELQ_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELQ))) =
+     .                           KNOD2ELQ(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELQ)))
                     DEALLOCATE(KNOD2ELQ,STAT=stat)
                     CALL MOVE_ALLOC(KNOD2ELQ_NEW,KNOD2ELQ)
                   ENDIF
@@ -12392,6 +12383,51 @@ c         start CPU timer for ddsplit
           CALL STARTIME(3,1)
 !       compute the size of TAG_SCRATCH and check if /INTER/24 or /25 is used
           CALL GET_SIZE_INTER24(I24MAXNSNE2,NINTER,NPARI,IPARI,FLAG_24_25)
+!       Q1NP promoted control points are appended after DOMDEC and therefore do
+!       not appear in the standard element connectivities used to build IFRONT.
+!       Before computing NUMNOD_L for restart splitting, propagate the parent
+!       solid/front ownership to those promoted nodes.
+          IF (NUMELQ1NP_G > 0 .AND. NUMNOD_CP_ADDED > 0) THEN
+            DO IEL = 1, NUMELQ1NP_G
+              N_CTRL = KQ1NP_TAB(3,IEL)
+              OFFSET_CTRL = KQ1NP_TAB(4,IEL)
+              OFFSET_BULK = KQ1NP_TAB(14,IEL)
+              IEL_HEX8 = KQ1NP_TAB(10,IEL)
+              DO I = 1, N_CTRL
+                NODE_CP = IQ1NP_TAB(OFFSET_CTRL + I - 1)
+                IF (NODE_CP <= NUMNOD_OLD .OR. NODE_CP > NUMNOD) CYCLE
+                IF (IEL_HEX8 > 0 .AND. IEL_HEX8 <= NUMELS) THEN
+                  DO J = 1, 8
+                    NODE_SRC = IXS(NIXS*(IEL_HEX8-1) + J + 1)
+                    IF (NODE_SRC <= 0) CYCLE
+                    DO PROC = 1, NSPMD
+                      IF (NLOCAL(NODE_SRC,PROC) == 1) THEN
+                        CALL IFRONTPLUS(NODE_CP,PROC)
+                      ENDIF
+                    ENDDO
+                  ENDDO
+                ELSEIF (OFFSET_BULK > 0) THEN
+                  DO J = 1, 4
+                    NODE_SRC = IQ1NP_BULK_TAB(OFFSET_BULK + J - 1)
+                    IF (NODE_SRC <= 0) CYCLE
+                    DO PROC = 1, NSPMD
+                      IF (NLOCAL(NODE_SRC,PROC) == 1) THEN
+                        CALL IFRONTPLUS(NODE_CP,PROC)
+                      ENDIF
+                    ENDDO
+                  ENDDO
+                ENDIF
+              ENDDO
+            ENDDO
+            Q1NP_FRONT_MISSING = 0
+            DO NODE_CP = NUMNOD_OLD + 1, NUMNOD
+              IF (IFRONT%IENTRY(NODE_CP) == -1) THEN
+                Q1NP_FRONT_MISSING = Q1NP_FRONT_MISSING + 1
+              ENDIF
+            ENDDO
+            WRITE(IOUT,'(A,3I10)') ' Q1NP FRONT FIX: promoted, total, missing =',
+     .        NUMNOD_CP_ADDED, NUMNOD, Q1NP_FRONT_MISSING
+          ENDIF
 !       compute the local number of element
           CALL GET_SIZE_NUMNOD_LOCAL(NUMNOD,NUMNOD_L)
 

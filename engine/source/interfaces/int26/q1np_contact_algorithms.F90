@@ -48,6 +48,7 @@
         USE CONSTANT_MOD , ONLY : ZERO, ONE, TWO, THREE, TEN, HALF
         USE Q1NP_RESTART_MOD
         USE RESTMOD, ONLY : KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB
+        USE Q1NP_CONTACT_EXPORT_MOD, ONLY : Q1NP_CONTACT_EXPORT_ACCUMULATE
         USE Q1NP_NURBS_SURFACE_EVALUATION_MOD, ONLY : &
      &      Q1NP_EVALUATE_NURBS_TOP_SURFACE_POINT, &
      &      Q1NP_EVALUATE_NURBS_TOP_SURFACE_POINT_AND_DERIVS, &
@@ -61,9 +62,8 @@
 !                                                   Tuning parameters
 ! ----------------------------------------------------------------------------------------------------------------------
 !       Broad-phase trigger tolerance (voxel-search).
-!       Keep this somewhat larger than the penalty reference gap so
-!       contact candidates are still tracked once noticeable overlap starts.
-        REAL(KIND=WP), PARAMETER, PUBLIC :: Q1NP_CONTACT_VOXEL_TRIGGER_TOLERANCE = 0.03_WP
+!       Runtime trigger tolerance is derived from the interface GAP value.
+        REAL(KIND=WP), PARAMETER, PUBLIC :: Q1NP_CONTACT_VOXEL_TRIGGER_FACTOR = 1.0_WP
 !       Keep voxel cells wider than the minimum 2*tolerance rule so the
 !       broad phase remains robust when the sampled B-cloud is sparse.
         REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_VOXEL_CELL_SIZE_FACTOR = 4.0_WP
@@ -86,9 +86,11 @@
         REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_PENALTY_SCALE = 1.0_WP
         REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_PENALTY_KMIN  = 1.0E+2_WP
         REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_PENALTY_KMAX  = 1.0E+4_WP
-        REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_GAP_REFERENCE = 0.01_WP
+
 !       Additional stabilizers for contact law.
         REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_FAC_MAX = 3.0_WP
+!       Lower bound used when interface GAP is zero/too small.
+        REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_GAP_FALLBACK = 1.0E-6_WP
 !       Effective penetration clipping ratio relative to GAP_REFERENCE.
 !       Set <= 0 to disable clipping.
         REAL(KIND=WP), PARAMETER :: Q1NP_CONTACT_PENETRATION_RATIO_MAX = -ONE
@@ -131,7 +133,7 @@
 !=======================================================================
         SUBROUTINE Q1NP_CONTACT_BROAD_PHASE_CHECK_PROXIMITY( &
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, X_COORDS, NUMNOD, &
-     &      NUMELQ1NP, TT, A, STIFN, PROXIMITY_DETECTED)
+     &      NUMELQ1NP, TT, GAP, A, STIFN, PROXIMITY_DETECTED)
 !C----------------------------------------------------------------------
 !C   D u m m y   A r g u m e n t s
 !C----------------------------------------------------------------------
@@ -140,6 +142,7 @@
           REAL(KIND=WP), INTENT(IN) :: Q1NP_KTAB(:)
           INTEGER, INTENT(IN) :: NUMNOD, NUMELQ1NP
           REAL(KIND=WP), INTENT(IN) :: TT
+          REAL(KIND=WP), INTENT(IN) :: GAP
           REAL(KIND=WP), INTENT(IN) :: X_COORDS(3,NUMNOD)
           REAL(KIND=WP), INTENT(INOUT) :: A(3,NUMNOD)
           REAL(KIND=WP), INTENT(INOUT) :: STIFN(NUMNOD)
@@ -149,7 +152,7 @@
 !C----------------------------------------------------------------------
           INTEGER :: NPTS_A, NPTS_B, IDX_A, IDX_B
           INTEGER :: MAX_PTS, N_PAIRS
-          REAL(KIND=WP) :: D_MIN, DIST_RATIO
+          REAL(KIND=WP) :: D_MIN, DIST_RATIO, GAP_CONTACT, TRIGGER_TOL
           REAL(KIND=WP), ALLOCATABLE :: SURF_POINTS_A(:,:)
           REAL(KIND=WP), ALLOCATABLE :: SURF_POINTS_B(:,:)
           INTEGER, ALLOCATABLE :: ELEM_IDS_A(:), ELEM_IDS_B(:)
@@ -162,6 +165,8 @@
           INTEGER :: ICAND, IB_DBG
 
           PROXIMITY_DETECTED = .FALSE.
+          GAP_CONTACT = MAX(Q1NP_CONTACT_GAP_FALLBACK, ABS(GAP))
+          TRIGGER_TOL = MAX(1.0E-12_WP, Q1NP_CONTACT_VOXEL_TRIGGER_FACTOR * GAP_CONTACT)
 
           IF (NUMELQ1NP <= 0) RETURN
           IF (Q1NP_NKNOT_SETS_G < 2) RETURN
@@ -213,7 +218,7 @@
 !  ----------------------------------------------------------------------------------------------------------------------
           CALL Q1NP_CONTACT_BROAD_PHASE_VOXEL_MIN_DISTANCE( &
      &        SURF_POINTS_A, NPTS_A, SURF_POINTS_B, NPTS_B,  &
-     &        D_MIN, IDX_A, IDX_B,                           &
+     &        TRIGGER_TOL, D_MIN, IDX_A, IDX_B,              &
      &        CANDIDATE_IA, CANDIDATE_COUNT, CANDIDATE_OVERFLOW)
           ! Returns D_MIN, IDX_A, IDX_B
           ! D_MIN: minimum distance between the two point clouds
@@ -227,7 +232,7 @@
           IF (IDX_A > 0 .AND. IDX_B > 0) THEN
             CALL Q1NP_CONTACT_NARROW_PHASE_PROJECT( &
      &          KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, X_COORDS, &
-     &          NUMNOD, &
+     &          NUMNOD, GAP_CONTACT, &
      &          SURF_POINTS_A, NPTS_A,                       &
      &          ELEM_IDS_A, XI_A, ETA_A,                     &
      &          SURF_POINTS_B, NPTS_B,                       &
@@ -244,14 +249,14 @@
             CALL Q1NP_CONTACT_COMPUTE_PENALTY_FORCES( &
      &          PAIRS, N_PAIRS, &
      &          KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, &
-     &          X_COORDS, NUMNOD, A, STIFN)
+     &          X_COORDS, NUMNOD, GAP_CONTACT, A, STIFN)
           END IF
 !   ----------------------------------------------------------------------------------------------------------------------
 !                                                ADAPTIVE SKIP SCHEDULING
 !   ----------------------------------------------------------------------------------------------------------------------
           IF (Q1NP_CONTACT_ENABLE_ADAPTIVE_SKIP) THEN
             IF (.NOT. PROXIMITY_DETECTED) THEN
-              DIST_RATIO = D_MIN / Q1NP_CONTACT_VOXEL_TRIGGER_TOLERANCE
+              DIST_RATIO = D_MIN / TRIGGER_TOL
               IF (DIST_RATIO <= ONE) THEN
                 Q1NP_CONTACT_BROAD_PHASE_SKIP_REMAINING = 0
               ELSE
@@ -464,6 +469,7 @@
 !=======================================================================
         SUBROUTINE Q1NP_CONTACT_BROAD_PHASE_VOXEL_MIN_DISTANCE( &
      &      SURF_POINTS_A, NPTS_A, SURF_POINTS_B, NPTS_B,       &
+     &      TRIGGER_TOL,                                         &
      &      D_MIN_OUT, IDX_A_OUT, IDX_B_OUT,                    &
      &      CANDIDATE_IA, CANDIDATE_COUNT, CANDIDATE_OVERFLOW)
 !C----------------------------------------------------------------------
@@ -483,6 +489,7 @@
           INTEGER, INTENT(IN)  :: NPTS_A, NPTS_B
           REAL(KIND=WP), INTENT(IN)  :: SURF_POINTS_A(3, NPTS_A)
           REAL(KIND=WP), INTENT(IN)  :: SURF_POINTS_B(3, NPTS_B)
+          REAL(KIND=WP), INTENT(IN)  :: TRIGGER_TOL
           REAL(KIND=WP), INTENT(OUT) :: D_MIN_OUT
           INTEGER, INTENT(OUT) :: IDX_A_OUT, IDX_B_OUT
           INTEGER, INTENT(OUT) :: CANDIDATE_IA(:,:)
@@ -511,7 +518,7 @@
           D_MIN_SQ  = HUGE(ONE)
           IDX_A_OUT = 0
           IDX_B_OUT = 0
-          TOL       = Q1NP_CONTACT_VOXEL_TRIGGER_TOLERANCE
+          TOL       = MAX(1.0E-12_WP, TRIGGER_TOL)
           CANDIDATE_IA(:,:) = 0
           CANDIDATE_COUNT(:) = 0
           CANDIDATE_OVERFLOW(:) = .FALSE.
@@ -690,7 +697,7 @@
 !=======================================================================
         SUBROUTINE Q1NP_CONTACT_NARROW_PHASE_PROJECT( &
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, X_COORDS, &
-     &      NUMNOD, &
+     &      NUMNOD, GAP_CONTACT, &
      &      SURF_POINTS_A, NPTS_A,                       &
      &      ELEM_IDS_A, XI_A, ETA_A,                     &
      &      SURF_POINTS_B, NPTS_B,                       &
@@ -703,6 +710,7 @@
           REAL(KIND=WP), INTENT(IN) :: Q1NP_KTAB(:)
           REAL(KIND=WP), INTENT(IN) :: X_COORDS(3,NUMNOD)
           INTEGER, INTENT(IN) :: NUMNOD
+          REAL(KIND=WP), INTENT(IN) :: GAP_CONTACT
           REAL(KIND=WP), INTENT(IN) :: SURF_POINTS_A(3,NPTS_A)
           INTEGER, INTENT(IN) :: NPTS_A
           INTEGER, INTENT(IN) :: ELEM_IDS_A(:)
@@ -758,7 +766,7 @@
      &            SIGNED_PENETRATION, NORMAL_VEC,         &
      &            RESIDUAL, N_ITER, PROJ_VALID)
                 IF (.NOT. PROJ_VALID) CYCLE
-                IF (SIGNED_PENETRATION >= ZERO) CYCLE
+                IF (SIGNED_PENETRATION >= GAP_CONTACT) CYCLE
                 IF ((.NOT. BEST_PROJ_VALID) .OR. &
      &              (SIGNED_PENETRATION < BEST_SIGNED_PENETRATION) .OR. &
      &              (SIGNED_PENETRATION == BEST_SIGNED_PENETRATION .AND. &
@@ -795,7 +803,7 @@
      &            SIGNED_PENETRATION, NORMAL_VEC,            &
      &            RESIDUAL, N_ITER, PROJ_VALID)
               IF (.NOT. PROJ_VALID) CYCLE
-              IF (SIGNED_PENETRATION >= ZERO) CYCLE
+              IF (SIGNED_PENETRATION >= GAP_CONTACT) CYCLE
 
               ! Store contact pair if projection is valid and signed penetration is negative
               BEST_PROJ_VALID = .TRUE.
@@ -834,7 +842,7 @@
         SUBROUTINE Q1NP_CONTACT_COMPUTE_PENALTY_FORCES( &
      &      CONTACT_PAIRS, N_PAIRS, &
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, &
-     &      X_COORDS, NUMNOD, A, STIFN)
+     &      X_COORDS, NUMNOD, GAP_CONTACT, A, STIFN)
           TYPE(Q1NP_CONTACT_PAIR), INTENT(IN) :: CONTACT_PAIRS(:)
           INTEGER, INTENT(IN) :: N_PAIRS
           INTEGER, INTENT(IN) :: KQ1NP_TAB(:,:)
@@ -842,6 +850,7 @@
           REAL(KIND=WP), INTENT(IN)    :: Q1NP_KTAB(:)
           REAL(KIND=WP), INTENT(IN)    :: X_COORDS(3,NUMNOD)
           INTEGER, INTENT(IN)          :: NUMNOD
+          REAL(KIND=WP), INTENT(IN)    :: GAP_CONTACT
           REAL(KIND=WP), INTENT(INOUT) :: A(3,NUMNOD)
           REAL(KIND=WP), INTENT(INOUT) :: STIFN(NUMNOD)
 
@@ -866,14 +875,14 @@
           F_MAX     = ZERO
           PENETR_MAX = ZERO
 
-          GAP_REF = Q1NP_CONTACT_GAP_REFERENCE
+          GAP_REF = MAX(Q1NP_CONTACT_GAP_FALLBACK, GAP_CONTACT)
           PAIR_WEIGHT = ONE / REAL(Q1NP_CONTACT_BROAD_PHASE_NGP_SURF_U * &
      &                             Q1NP_CONTACT_BROAD_PHASE_NGP_SURF_V, WP)
           ALLOCATE(STIFN_BASE(NUMNOD))
           STIFN_BASE(1:NUMNOD) = STIFN(1:NUMNOD)
 
           DO IP = 1, N_PAIRS
-            PEN_ABS = ABS(CONTACT_PAIRS(IP)%PENETRATION)
+            PEN_ABS = GAP_REF - CONTACT_PAIRS(IP)%PENETRATION
             IF (PEN_ABS <= ZERO) CYCLE
             IF (Q1NP_CONTACT_PENETRATION_RATIO_MAX > ZERO) THEN
               PEN_EFF = MIN(PEN_ABS, &
@@ -958,6 +967,11 @@
 
             IF (F_MAG > F_MAX) F_MAX = F_MAG
             IF (PEN_ABS > PENETR_MAX) PENETR_MAX = PEN_ABS
+
+            CALL Q1NP_CONTACT_EXPORT_ACCUMULATE( &
+     &          CONTACT_PAIRS(IP)%ELEM_A, -F_PEN, PEN_ABS)
+            CALL Q1NP_CONTACT_EXPORT_ACCUMULATE( &
+     &          CONTACT_PAIRS(IP)%ELEM_B,  F_PEN, PEN_ABS)
 
 !           --- Scatter to A: -N_k * F ---
             DO K = 1, MIN(KQ1NP_TAB(3, CONTACT_PAIRS(IP)%ELEM_A), MAX_CTRL)

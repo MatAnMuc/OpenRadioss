@@ -68,7 +68,7 @@
      &                      TABLE, IPRI, MAT_ELEM, NG, H3D_STRAIN, SVIS, GLOB_THERM, &
      &                      SNPC, NUMGEO, NUMNOD, NUMELS, NUMELQ, NGROUP, SBUFMAT, STF, &
      &                      NUMMAT, NTABLE, NSVOIS, IRESP, IDEL7NOK, MAXFUNC, USERL_AVAIL, &
-     &                      IMON_MAT, IMPL_S, IDYNA, IDTMIN, DT, ITAB, SENSORS)
+     &                      IMON_MAT, IMPL_S, IDYNA, IDTMIN, DT, SENSORS)
   !-----------------------------------------------
   !   M o d u l e s
   !-----------------------------------------------
@@ -177,7 +177,6 @@
       my_real, DIMENSION(MVSIZ,6), INTENT(INOUT) :: SVIS
       TYPE(GLOB_THERM_),  INTENT(INOUT) :: GLOB_THERM
       TYPE(DT_),          INTENT(IN)    :: DT
-      INTEGER,            INTENT(IN)    :: ITAB(NUMNOD)
       TYPE(SENSORS_),     INTENT(INOUT) :: SENSORS
   !-----------------------------------------------
   !   L o c a l   V a r i a b l e s
@@ -193,10 +192,11 @@
       INTEGER :: Q1NP_IDS(MVSIZ), II(6)
       INTEGER, ALLOCATABLE :: NCTRL_ELEM(:)
       INTEGER, ALLOCATABLE :: U_LEN_EL(:), V_LEN_EL(:)
-      INTEGER, ALLOCATABLE :: ELEM_U(:), ELEM_V(:), PID_ELEM(:)
-      INTEGER, ALLOCATABLE :: MAT_ID_ELEM(:), NGL_ELEM(:)
+      INTEGER, ALLOCATABLE :: ELEM_U(:), ELEM_V(:)
+      INTEGER :: PID_ELEM(MVSIZ), MAT_ID_ELEM(MVSIZ), NGL_ELEM(MVSIZ)
       INTEGER, ALLOCATABLE :: NODE_GID(:,:), NODE_LID(:,:), NODE_POS(:,:)
       INTEGER, ALLOCATABLE :: GROUP_GID(:), GROUP_LID(:)
+      INTEGER :: IPARG_LOCAL(NPARG,1)
       TYPE(G_BUFEL_) ,POINTER :: GBUF
       TYPE(L_BUFEL_) ,POINTER :: LBUF
       TYPE(ELBUF_STRUCT_) :: ELBUF_TAB_LOCAL(1)
@@ -207,8 +207,6 @@
       my_real, ALLOCATABLE :: U_KNOT(:,:), V_KNOT(:,:)
       my_real, ALLOCATABLE :: NVAL(:), DN_LOCAL(:,:), DN_GLOBAL(:,:)
       my_real, ALLOCATABLE :: MATB_GP(:,:)
-      my_real, ALLOCATABLE :: VX_BAL(:,:), VY_BAL(:,:), VZ_BAL(:,:)
-      my_real, ALLOCATABLE :: XX_BAL(:,:), YY_BAL(:,:), ZZ_BAL(:,:)
       my_real, ALLOCATABLE :: VGAUSS(:,:)
       my_real :: STI(MVSIZ), OFF(MVSIZ), RHO0(MVSIZ)
       my_real :: VOLN(MVSIZ), VOLG(MVSIZ), DVOL(MVSIZ), VD2(MVSIZ)
@@ -226,6 +224,7 @@
       my_real :: MFXX(MVSIZ), MFXY(MVSIZ), MFXZ(MVSIZ), MFYX(MVSIZ), MFYY(MVSIZ)
       my_real :: MFYZ(MVSIZ), MFZX(MVSIZ), MFZY(MVSIZ), MFZZ(MVSIZ)
       my_real :: GAMA(MVSIZ,6), FR_WAV(MVSIZ), TEMPEL(MVSIZ), DIE(MVSIZ)
+      my_real :: FHEAT(MVSIZ)
       my_real :: VARNL(MVSIZ), CONDE(MVSIZ)
       my_real :: FVD2(MVSIZ), FDELTAX(MVSIZ), FSSP(MVSIZ), FQVIS(MVSIZ)
       DOUBLE PRECISION :: VOLDP(MVSIZ)
@@ -266,6 +265,12 @@
   !-----------------------------------------------------------------------
   !  (1) Identify Q1NP element IDs for the group and derive degrees (P,Q)
   !-----------------------------------------------------------------------
+      IF (NEL > MVSIZ) THEN
+        WRITE(*,'(A,I8,A,I8,A,I8)') 'Q1NP ERROR: NEL exceeds MVSIZ: NG=', &
+     &    NG, ' NEL=', NEL, ' MVSIZ=', MVSIZ
+        RETURN
+      END IF
+
       NFT_G = IPARG(3,NG)
       MAX_NNODE = 0
       TOTAL_NODE_REF = 0
@@ -295,7 +300,6 @@
         P_MAX = MAX(P_MAX, P_CUR)
         Q_MAX = MAX(Q_MAX, Q_CUR)
       END DO
-
   !-----------------------------------------------------------------------
   !  (2) Reconstruct Q1NP parametric grid + initialize Gauss scheme
   !-----------------------------------------------------------------------
@@ -349,10 +353,10 @@
   !-----------------------------------------------------------------------
       GBUF => ELBUF_STR%GBUF
       ELBUF_TAB_LOCAL(1) = ELBUF_STR
+      IPARG_LOCAL(:,1) = IPARG(:,NG)
 
       ALLOCATE(NCTRL_ELEM(NEL))
-      ALLOCATE(ELEM_U(NEL), ELEM_V(NEL), PID_ELEM(NEL))
-      ALLOCATE(MAT_ID_ELEM(NEL), NGL_ELEM(NEL))
+      ALLOCATE(ELEM_U(NEL), ELEM_V(NEL))
       ALLOCATE(NODE_GID(MAX_NNODE,NEL), NODE_LID(MAX_NNODE,NEL), NODE_POS(MAX_NNODE,NEL))
       ALLOCATE(GROUP_GID(TOTAL_NODE_REF), GROUP_LID(TOTAL_NODE_REF))
       ALLOCATE(X_ELEM(3,MAX_NNODE,NEL), V_ELEM(3,MAX_NNODE,NEL))
@@ -363,6 +367,9 @@
       ALLOCATE(NVAL(MAX_NNODE), DN_LOCAL(MAX_NNODE,3), DN_GLOBAL(MAX_NNODE,3))
       ALLOCATE(MATB_GP(3*MAX_NNODE,NEL))
       ALLOCATE(VGAUSS(NGP_Q1NP,NEL))
+      PID_ELEM = 0
+      MAT_ID_ELEM = 0
+      NGL_ELEM = 0
 
   !-----------------------------------------------------------------------
   !  (4) Snapshot the Gauss-point volume into VOL0DP
@@ -538,6 +545,7 @@
               V_ELEM(3,K,IEL) = V(3,LOCAL_ID)
             END DO
           END DO
+
         END SUBROUTINE Q1NP_INIT_NODE_MAP
 
 !=======================================================================
@@ -556,11 +564,15 @@
           END DO
 
           IF (.NOT. Q1NP_BULK_FIX_READY(IQ1NP_LOCAL)) THEN
-            CALL Q1NP_REBUILD_BULK_FROM_HEX(IEL_LOCAL, IQ1NP_LOCAL, REBUILT_BULK, MATCH_SCORE, IERR_LOCAL)
-            IF (IERR_LOCAL == 0) THEN
-              Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL) = REBUILT_BULK(1:4)
-            ELSE
+            IF (MINVAL(STORED_BULK) > 0 .AND. MAXVAL(STORED_BULK) <= NUMNOD) THEN
               Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL) = STORED_BULK(1:4)
+            ELSE
+              CALL Q1NP_REBUILD_BULK_FROM_HEX(IEL_LOCAL, IQ1NP_LOCAL, REBUILT_BULK, MATCH_SCORE, IERR_LOCAL)
+              IF (IERR_LOCAL == 0) THEN
+                Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL) = REBUILT_BULK(1:4)
+              ELSE
+                Q1NP_BULK_FIX_IDS(1:4,IQ1NP_LOCAL) = STORED_BULK(1:4)
+              END IF
             END IF
             Q1NP_BULK_FIX_READY(IQ1NP_LOCAL) = .TRUE.
           END IF
@@ -769,6 +781,7 @@
           FR_WAV = ZERO
           TEMPEL = ZERO
           DIE = ZERO
+          FHEAT = ZERO
           VARNL = ZERO
           CONDE = ZERO
           FVD2 = ZERO
@@ -857,6 +870,7 @@
           FR_WAV(1:NEL) = ZERO
           TEMPEL(1:NEL) = ZERO
           DIE(1:NEL) = ZERO
+          FHEAT(1:NEL) = ZERO
           VARNL(1:NEL) = ZERO
           CONDE(1:NEL) = ZERO
           FVD2(1:NEL) = ZERO
@@ -894,23 +908,7 @@
      &                           NNODE_LOCAL, JMAT_LOCAL, DETJ_LOCAL, JINV_LOCAL, DN_GLOBAL(1:NNODE_LOCAL,1:3), IERR_LOCAL)
 
             IF (IERR_LOCAL /= 0) THEN
-              WRITE(*,*) 'TT = ', TT
-              WRITE(*,'(A,I10,A,I10,A,I4,A,I4,A,I4)') &
-     &            'Q1NP ERROR: singular/non-positive Jacobian in element ', NGL_ELEM(IEL_LOCAL), &
-     &            ' group ', NG, ' at GP ', IU, ',', IV, ',', IT
-              WRITE(*,'(A,I10,A,I10)') '  IQ1NP=', Q1NP_IDS(IEL_LOCAL), &
-     &            '  knot_set_id KQ1NP_TAB(15)=', KQ1NP_TAB(15, Q1NP_IDS(IEL_LOCAL))
-              WRITE(*,'(A,I10,A,I10,A,I10,A,I10)') '  U_LEN_EL=', U_LEN_EL(IEL_LOCAL), &
-     &            ' V_LEN_EL=', V_LEN_EL(IEL_LOCAL), ' NCTRL=', NCTRL_ELEM(IEL_LOCAL), &
-     &            ' NNODE=', NNODE_LOCAL
-              WRITE(*,'(A,I10)') '  Q1NP_NKNOT_SETS_G=', Q1NP_NKNOT_SETS_G
-              WRITE(*,'(A,E14.6)') '  DETJ=', DETJ_LOCAL
-              IF (U_LEN_EL(IEL_LOCAL) >= 1) WRITE(*,'(A,3E14.6)') '  U_KNOT(1:3)=', &
-     &            U_KNOT(1:MIN(3,U_LEN_EL(IEL_LOCAL)),IEL_LOCAL)
-              IF (V_LEN_EL(IEL_LOCAL) >= 1) WRITE(*,'(A,3E14.6)') '  V_KNOT(1:3)=', &
-     &            V_KNOT(1:MIN(3,V_LEN_EL(IEL_LOCAL)),IEL_LOCAL)
-              WRITE(*,'(A,2E14.6)') '  ELEM_U ELEM_V (param cell)=', ELEM_U(IEL_LOCAL), &
-     &            ELEM_V(IEL_LOCAL)
+              WRITE(*,*) 'Bad Jacobian'
               IERR_OUT = IERR_LOCAL
               RETURN
             END IF
@@ -927,7 +925,7 @@
               END DO
             END IF
 
-            CALL Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, NVAL(1:NNODE_LOCAL), DN_GLOBAL(1:NNODE_LOCAL,1:3), DETJ_LOCAL)
+            CALL Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, DN_GLOBAL(1:NNODE_LOCAL,1:3))
           END DO
 
           CALL Q1NP_EVAL_DEF()
@@ -954,8 +952,9 @@
      &                 GBUF%TAG22, VOLDP, LBUF%VOL0DP, AMU, GBUF%OFF, NEL, &
      &                 V01_MTN, V01_JALE, V01_ISMSTR, V01_JEUL, V01_JLAG, 1, 1, 0)
 
-          ! main material-law driver
-          CALL MMAIN(TIMERS, OUTPUT, ELBUF_TAB_LOCAL, 1, PM, GEO, ALE_CONNECT, IXS, IPARG, &
+
+          ! MMAIN shapes ELBUF_TAB/IPARG with NGROUP, so keep the local single-group view consistent.
+          CALL MMAIN(TIMERS, OUTPUT, ELBUF_TAB_LOCAL, 1, PM, GEO, ALE_CONNECT, IXS, IPARG_LOCAL, &
      &                 V, TF, NPF, BUFMAT, STI, X, DT2T, NELTST, ITYPTST, OFFSET, NEL, W, &
      &                 OFF, PID_ELEM, MAT_ID_ELEM, NGL_ELEM, VOLN, VD2, DVOL, DELTAX, VIS, &
      &                 QVIS, CXX, S1, S2, S3, S4, S5, S6, DXX, DYY, DZZ, D4, D5, D6, WXX, &
@@ -963,12 +962,12 @@
      &                 AIRE, SIGY, ET, BUFVOIS, LBUF%PLA, R3_DAM, AMU, MFXX, MFXY, MFXZ, MFYX, &
      &                 MFYY, MFYZ, MFZX, MFZY, MFZZ, IPM, GAMA, FR_WAV, DXY, DYX, DYZ, DZY, &
      &                 DZX, DXZ, ISTRAIN, TEMPEL, DIE, IEXPAN, ILAY, MSSA, DMELS, IU, IV, IT, &
-     &                 TABLE, FVD2, FDELTAX, FSSP, FQVIS, IPARG(:,NG), IGEO, CONDE, ITASK, &
+     &                 TABLE, FVD2, FDELTAX, FSSP, FQVIS, IPARG_LOCAL(:,1), IGEO, CONDE, ITASK, &
      &                 NLOC_DMG, VARNL, MAT_ELEM, H3D_STRAIN, V01_JPLASOL, V01_JSPH, MVSIZ, &
      &                 SNPC, STF, SBUFMAT, GLOB_THERM, SVIS, SZ_IX, IRESP, 0, TH_STRAIN, &
-     &                 NGROUP, TT, DT1, NTABLE, NUMELQ, NUMMAT, NUMGEO, NUMNOD, NUMELS, &
+     &                 1, TT, DT1, NTABLE, NUMELQ, NUMMAT, NUMGEO, NUMNOD, NUMELS, &
      &                 IDEL7NOK, IDTMIN, MAXFUNC, IMON_MAT, USERL_AVAIL, IMPL_S, IDYNA, DT, &
-     &                 FV, SENSORS)
+     &                 FHEAT, SENSORS)
 
           ! strain history update routine. Used to store the small-strain tensor
           ! Update LBUF%STRA (stored strain components) from current deformation-rate terms
@@ -978,9 +977,9 @@
 !=======================================================================
 ! Fill the element-local material basis matrix
 !=======================================================================
-        SUBROUTINE Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, R_LOCAL, DRDX_LOCAL, DETJ_LOCAL)
+        SUBROUTINE Q1NP_FILL_MATB(IEL_LOCAL, NNODE_LOCAL, DRDX_LOCAL)
           INTEGER, INTENT(IN) :: IEL_LOCAL, NNODE_LOCAL
-          my_real, INTENT(IN) :: R_LOCAL(NNODE_LOCAL), DRDX_LOCAL(NNODE_LOCAL,3), DETJ_LOCAL
+          my_real, INTENT(IN) :: DRDX_LOCAL(NNODE_LOCAL,3)
           INTEGER :: K_LOCAL, IAD_LOCAL
 
           DO K_LOCAL = 1, NNODE_LOCAL
@@ -1179,7 +1178,7 @@
 !=======================================================================
         SUBROUTINE Q1NP_AVG_SIG_BILAN()
           INTEGER :: IU_LOCAL, IV_LOCAL, IT_LOCAL
-          INTEGER :: IEL_LOCAL, K_LOCAL
+          INTEGER :: IEL_LOCAL
           INTEGER :: IPT_Q1NP_LOCAL
           LOGICAL :: CAN_BILAN_LOCAL
 
@@ -1205,25 +1204,7 @@
           END DO
 
           IF (CAN_BILAN_LOCAL .AND. IPRI > 0) THEN
-            ALLOCATE(VX_BAL(NCTRL_ELEM(1) + 4,NEL), VY_BAL(NCTRL_ELEM(1) + 4,NEL), VZ_BAL(NCTRL_ELEM(1) + 4,NEL))
-            ALLOCATE(XX_BAL(NCTRL_ELEM(1) + 4,NEL), YY_BAL(NCTRL_ELEM(1) + 4,NEL), ZZ_BAL(NCTRL_ELEM(1) + 4,NEL))
-
-            DO IEL_LOCAL = 1, NEL
-              DO K_LOCAL = 1, NCTRL_ELEM(IEL_LOCAL) + 4
-                VX_BAL(K_LOCAL,IEL_LOCAL) = V_ELEM(1,K_LOCAL,IEL_LOCAL)
-                VY_BAL(K_LOCAL,IEL_LOCAL) = V_ELEM(2,K_LOCAL,IEL_LOCAL)
-                VZ_BAL(K_LOCAL,IEL_LOCAL) = V_ELEM(3,K_LOCAL,IEL_LOCAL)
-                XX_BAL(K_LOCAL,IEL_LOCAL) = X_ELEM(1,K_LOCAL,IEL_LOCAL)
-                YY_BAL(K_LOCAL,IEL_LOCAL) = X_ELEM(2,K_LOCAL,IEL_LOCAL)
-                ZZ_BAL(K_LOCAL,IEL_LOCAL) = X_ELEM(3,K_LOCAL,IEL_LOCAL)
-              END DO
-            END DO
-
- !           CALL IGE3DBILAN(PARTSAV, GBUF%EINT, GBUF%RHO, VOLG, VX_BAL, VY_BAL, VZ_BAL, IPARTS, &
- !    &                      GBUF%VOL, GRESAV, GRTH, IGRTH, XX_BAL, YY_BAL, ZZ_BAL, NCTRL_ELEM(1) + 4, &
- !    &                      ITASK, IPARG(1,NG), SENSORS)
-
-            DEALLOCATE(VX_BAL, VY_BAL, VZ_BAL, XX_BAL, YY_BAL, ZZ_BAL)
+            ! NOTE: BILAN is currently disabled.
           END IF
         END SUBROUTINE Q1NP_AVG_SIG_BILAN
 
@@ -1356,30 +1337,5 @@
             END IF
           END DO
         END FUNCTION FIND_GROUP_NODE
-
-!=======================================================================
-! Rebuild the grid for a given number of control points
-!=======================================================================
-        SUBROUTINE Q1NP_REBUILD_GRID(NX_OUT, NY_OUT, P_IN, Q_IN)
-          INTEGER, INTENT(OUT) :: NX_OUT, NY_OUT
-          INTEGER, INTENT(IN)  :: P_IN, Q_IN
-          NX_OUT = 0
-          NY_OUT = 0
-          IF (SQ1NPCTRL_SHARED_G <= 0 .OR. SQ1NPKNOT_L_G <= 0) RETURN
-          DO NX_CAND = 1, SQ1NPCTRL_SHARED_G
-            IF (MOD(SQ1NPCTRL_SHARED_G, NX_CAND) /= 0) CYCLE
-            NY_CAND = SQ1NPCTRL_SHARED_G / NX_CAND
-            NX_FOUND = NX_CAND - P_IN
-            NY_FOUND = NY_CAND - Q_IN
-            IF (NX_FOUND <= 0 .OR. NY_FOUND <= 0) CYCLE
-            NKNOT_U = NX_FOUND + 2*P_IN + 1
-            NKNOT_V = NY_FOUND + 2*Q_IN + 1
-            IF (NKNOT_U + NKNOT_V == SQ1NPKNOT_L_G) THEN
-              NX_OUT = NX_FOUND
-              NY_OUT = NY_FOUND
-              RETURN
-            END IF
-          END DO
-        END SUBROUTINE Q1NP_REBUILD_GRID
 
       END SUBROUTINE Q1NP_FORC3
