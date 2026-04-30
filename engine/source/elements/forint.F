@@ -1132,7 +1132,7 @@ C
      7         SNPC, NUMGEO, NUMNOD, NUMELS, NUMELQ, NGROUP,
      8         SBUFMAT, STF, NUMMAT, NTABLE, NSVOIS, IRESP,
      9         IDEL7NOK, MAXFUNC, USERL_AVAIL, IMON_MAT, impl_s,
-     A         idyna, IDTMIN, DT, ITAB, SENSORS)
+     A         idyna, IDTMIN, DT, SENSORS)
              
              ELSE
 
@@ -1623,7 +1623,7 @@ C
 
       IF (NUMELQ1NP_G > 0 .AND. IPRI == 1) THEN
         IF (DUMP_Q1NP_STATE) THEN
-         CALL Q1NP_DUMP_HIST_STATE(TT, X, ITAB, NUMNOD)
+         CALL Q1NP_DUMP_HIST_STATE(TT, X, NUMNOD)
         ENDIF
       ENDIF
 C

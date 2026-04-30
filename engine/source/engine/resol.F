@@ -1444,7 +1444,8 @@ C-----------------------------------------------
         print *, "Internal ID of the selected group of PRIMARY nodes 
      &           (for STS):", IPARI(46,1)
       END IF
-      
+
+      IF (NINTER > 0) THEN      
       IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
      .    IPARI(46,1) <= NSURF) THEN
           IF (DEBUG_SWITCH) THEN
@@ -1471,6 +1472,7 @@ C-----------------------------------------------
             print *, "STS interface not active or invalid primary surface ID"
           END IF
       ENDIF  
+      ENDIF
 
 C-----------------------------------------------
 C Process SECONDARY Surface (Slave Surface for STS)

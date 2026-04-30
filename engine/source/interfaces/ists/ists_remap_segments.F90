@@ -5,7 +5,7 @@
 !||--- calls ---------------------------------------------------------
 !||    (none – local mapping only)
 !||====================================================================
-      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, NUMNOD, NRTM, CAND_SEC_SEG, &
+      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, X, NUMNOD, NRTM, CAND_SEC_SEG, &
      &  JLT, CAND_N_CUR, CAND_E_CUR, IRECT, CONT_ELEMENT, COUNT, &
      &  IGRSURF, CAND_SEC_SEG_ID, CAND_MST_SEG_ID, &
      &  MAX_STS_SIZE_ACTUAL, NSURF_LOCAL, SEC_SURF_ID, MST_SURF_ID)
@@ -27,10 +27,9 @@
 !-----------------------------------------------
 !   D u m m y   A r g u m e n t s
 !-----------------------------------------------
-      TYPE(INTBUF_STRUCT_) INTBUF_TAB(:)
-      TYPE (SURF_)   , DIMENSION(:)   :: IGRSURF
-      INTEGER ITAB(:)
-      INTEGER JLT, NUMNOD, NRTM, CAND_N_CUR(:), CAND_E_CUR(:)
+      TYPE(INTBUF_STRUCT_) INTBUF_TAB
+      TYPE (SURF_)   , DIMENSION(NSURF_LOCAL)   :: IGRSURF
+      INTEGER JLT, NUMNOD, NRTM, CAND_N_CUR(JLT), CAND_E_CUR(JLT)
       INTEGER IRECT(4,NRTM)
       my_real X(3,NUMNOD)
       INTEGER CAND_SEC_SEG(MAX_STS_SIZE_ACTUAL)
@@ -54,7 +53,7 @@
 !   S o u r c e   L i n e s
 !-----------------------------------------------
       SEC_SURF_IDX = SEC_SURF_ID
-      IF (INTBUF_TAB(1)%S_NSV <= 0 .OR. JLT <= 0) THEN
+      IF (INTBUF_TAB%S_NSV <= 0 .OR. JLT <= 0) THEN
         COUNT = 0
         RETURN
       END IF
@@ -70,7 +69,7 @@
             DO K = 1, 4
               candidate = IGRSURF(I)%NODES(J, K)
               IF (candidate <= 0) CYCLE
-              IF (ANY(INTBUF_TAB(1)%NSV(1:INTBUF_TAB(1)%S_NSV) == candidate)) THEN
+              IF (ANY(INTBUF_TAB%NSV(1:INTBUF_TAB%S_NSV) == candidate)) THEN
                 OVERLAP = OVERLAP + 1
               END IF
             END DO
@@ -114,8 +113,8 @@
 
       ! Map candidate nodes to segment pairs
       DO I = 1, JLT
-        IF (CAND_N_CUR(I) <= 0 .OR. CAND_N_CUR(I) > INTBUF_TAB(1)%S_NSV) CYCLE
-        candidate = INTBUF_TAB(1)%NSV(CAND_N_CUR(I))
+        IF (CAND_N_CUR(I) <= 0 .OR. CAND_N_CUR(I) > INTBUF_TAB%S_NSV) CYCLE
+        candidate = INTBUF_TAB%NSV(CAND_N_CUR(I))
         candidateM = CAND_E_CUR(I)
         IF (candidateM <= 0) CYCLE
         

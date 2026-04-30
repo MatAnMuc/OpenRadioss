@@ -224,6 +224,7 @@
       ENDIF
   !C     GRID_NODE: leading dimension NSEG*4 so (NX+1,NY+1) always fits (NX*NY=NSEG).
       ALLOCATE(GRID_NODE(NSEG*4, NSEG*4), STAT=IEL)
+      GRID_NODE(1:NSEG*4,1:NSEG*4) = 0
       IF (IEL .NE. 0) THEN
         DEALLOCATE(SEG_I, SEG_J, GRID_TO_SEG)
         CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,C1='GRID_NODE')
@@ -389,7 +390,7 @@
       WEIGHT_CURRENT = Q1NP_GRID_NODE_WEIGHT
       CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD, &
-     &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,     &
+     &     GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,     &
      &     IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT, &
      &     CSV_SURF_ID_IN )
 
@@ -399,7 +400,7 @@
   !C=======================================================================
       CALL Q1NP_SELECT_GLOBAL_CP_ORIENTATION(NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
      &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, &
-     &     NIXS, NUMELS, X, IOUT)
+     &     NIXS, NUMELS, X, IOUT, MAX_CP_U,MAX_CP_V)
 
   !C=======================================================================
   !C   Step 5c: Report top-surface fit quality against original surface grid
@@ -573,7 +574,7 @@
      &     ' with reduced grid weight = ', WEIGHT_CURRENT
           CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &       NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD, &
-     &       GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,       &
+     &       GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,       &
      &       IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT, &
      &       CSV_SURF_ID_IN )
           CALL Q1NP_REPORT_FIT_ERROR(NX, NY, P, Q, NCP_U, NCP_V, &
@@ -682,7 +683,7 @@
 !C=======================================================================
            SUBROUTINE Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD,    &
-     &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,           &
+     &     GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,           &
      &     ICP_METHOD_IN, DIV_IN, WEIGHT_IN,           &
      &     CSV_SURF_ID_IN )
 
@@ -698,7 +699,6 @@
         INTEGER, INTENT(IN) :: GRID_NODE(:,:)
         REAL(WP), INTENT(IN) :: X(3,NUMNOD)
         REAL(WP), INTENT(IN) :: Q1NP_KTAB(:)
-        INTEGER, INTENT(IN) :: CP_MAP(:,:)
         INTEGER, INTENT(IN) :: ICP_METHOD_IN, DIV_IN
         REAL(WP), INTENT(IN) :: WEIGHT_IN
         INTEGER, INTENT(IN) :: CSV_SURF_ID_IN
@@ -1380,19 +1380,20 @@
 !C   the best consistent top-vs-bulk orientation over all active patches.
 !C=======================================================================
       SUBROUTINE Q1NP_SELECT_GLOBAL_CP_ORIENTATION(NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
-     &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, NIXS, NUMELS, X, IOUT)
+     &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, NIXS, NUMELS, X, IOUT, &
+     &     MAX_CP_U,MAX_CP_V)
   !C-----------------------------------------------
   !C   M o d u l e s
   !C-----------------------------------------------
         USE precision_mod, ONLY : WP
         USE constant_mod, ONLY : ZERO, ONE
-        USE q1np_geom_mod, ONLY : q1np_get_knot_vectors
         IMPLICIT NONE
   !C-----------------------------------------------
   !C   D u m m y   A r g u m e n t s
   !C-----------------------------------------------
         INTEGER, INTENT(IN) :: NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, NIXS, NUMELS, IOUT
-        INTEGER, INTENT(INOUT) :: CP_MAP(:,:)
+        INTEGER, INTENT(IN) :: MAX_CP_U,MAX_CP_V
+        INTEGER, INTENT(INOUT) :: CP_MAP(MAX_CP_U,MAX_CP_V)
         INTEGER, INTENT(IN) :: GRID_NODE(NX+1,NY+1), GRID_TO_SEG(NX,NY), IXS(NIXS,NUMELS)
         REAL(KIND=WP), INTENT(IN) :: Q1NP_CPTAB(3,NCP), Q1NP_KTAB(:), X(3,NUMNOD)
   !C-----------------------------------------------
@@ -1559,7 +1560,7 @@
   !C-----------------------------------------------
         INTEGER, INTENT(IN) :: I_ELEM, J_ELEM, P_ELEM, Q_ELEM
         INTEGER, INTENT(IN) :: MAX_CP_U, MAX_CP_V, NCP, NUMNOD
-        INTEGER, INTENT(IN) :: CP_MAP(:,:)
+        INTEGER, INTENT(IN) :: CP_MAP(MAX_CP_U,MAX_CP_V)
         INTEGER, INTENT(IN) :: NODES_BULK(4)
         REAL(KIND=WP), INTENT(IN) :: Q1NP_CPTAB(3,NCP), X(3,NUMNOD)
         REAL(KIND=WP), INTENT(OUT) :: TOP_MAG, BOT_MAG, TOP_BOT_DOT, TOP_BOT_COS
