@@ -109,7 +109,8 @@
           integer :: head, tail, nassign
           integer :: idx, itr, ii_new, jj_new, next(4)
           integer :: gi(4), gj(4), base(4), cand(4), exist(4)
-          integer :: grid_node_tmp(1-off:off*2+1, 1-off:off*2+1)
+          integer, allocatable :: grid_node_tmp(:, :)
+          integer :: istat_tmp
 !     Direction order for BFS: right(2), top(4), left(1), bottom(3)
           integer :: dir_list(4), delta_i(4), delta_j(4)
           integer :: gioff(4, 4), gjoff(4, 4)
@@ -138,6 +139,12 @@
           ny = 0
           allocate(neighbor(nseg, 4), assigned(nseg), seg_corner(4, nseg))
           allocate(qseg(nseg), qi(nseg), qj(nseg))
+          allocate(grid_node_tmp(1-off:off*2+1, 1-off:off*2+1), stat=istat_tmp)
+          if (istat_tmp /= 0) then
+            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+            ierr = 7
+            return
+          end if
 
           seg_i(1:nseg) = 0
           seg_j(1:nseg) = 0
@@ -228,6 +235,7 @@
               dir_local = q1np_grid_dir_to_local_edge(seg_corner(1:4, iseg), d)
               if (dir_local .le. 0) then
                 ierr = 3
+                if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
                 deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
                 return
               end if
@@ -262,7 +270,8 @@
 
                 if (idx .le. 0) then
                   ierr = 3
-                  deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                  if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
                   return
                 end if
 
@@ -274,7 +283,8 @@
                 tail = tail + 1
                 if (tail .gt. nseg) then
                   ierr = 7
-                  deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                  if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
                   return
                 end if
                 qseg(tail) = jseg
@@ -283,14 +293,16 @@
               else
                 if (seg_i(jseg) .ne. ii_new .or. seg_j(jseg) .ne. jj_new) then
                   ierr = 5
-                  deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                  if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
                   return
                 end if
                 do k = 1, 4
                   cand(k) = base(seg_corner(k, jseg))
                   if (exist(k) .gt. 0 .and. exist(k) .ne. cand(k)) then
                     ierr = 3
-                    deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+                    if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
                     return
                   end if
                 end do
@@ -305,7 +317,8 @@
 !     --- Sanity: all segments must have been assigned (connected surface) ---
           if (nassign .ne. nseg) then
             ierr = 4
-            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+            if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
             return
           end if
 
@@ -325,7 +338,8 @@
 
           if (nx*ny .ne. nseg) then
             ierr = 5
-            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+            if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
             return
           end if
 
@@ -345,7 +359,8 @@
 !     --- Copy GRID_NODE_TMP into output GRID_NODE (1-based, size (NX+1)*(NY+1)) ---
           if (nx+1 .gt. nseg*4 .or. ny+1 .gt. nseg*4) then
             ierr = 7
-            deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+            if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
             return
           end if
 
@@ -355,7 +370,8 @@
             end do
           end do
 
-          deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
+          if (allocated(grid_node_tmp)) deallocate(grid_node_tmp)
+                deallocate(neighbor, assigned, seg_corner, qseg, qi, qj)
 
           return
         end subroutine q1np_build_surf_grid

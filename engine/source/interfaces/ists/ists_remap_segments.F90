@@ -5,7 +5,7 @@
 !||--- calls ---------------------------------------------------------
 !||    (none – local mapping only)
 !||====================================================================
-      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, ITAB, X, NUMNOD, NRTM, CAND_SEC_SEG, &
+      SUBROUTINE STS_REMAP_SEGMENTS(INTBUF_TAB, X, NUMNOD, NRTM, CAND_SEC_SEG, &
      &  JLT, CAND_N_CUR, CAND_E_CUR, IRECT, CONT_ELEMENT, COUNT, &
      &  IGRSURF, CAND_SEC_SEG_ID, CAND_MST_SEG_ID, &
      &  MAX_STS_SIZE_ACTUAL, NSURF_LOCAL, SEC_SURF_ID, MST_SURF_ID)
@@ -29,7 +29,6 @@
 !-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB
       TYPE (SURF_)   , DIMENSION(NSURF_LOCAL)   :: IGRSURF
-      INTEGER ITAB(:)
       INTEGER JLT, NUMNOD, NRTM, CAND_N_CUR(JLT), CAND_E_CUR(JLT)
       INTEGER IRECT(4,NRTM)
       my_real X(3,NUMNOD)

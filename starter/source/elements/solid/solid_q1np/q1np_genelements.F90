@@ -65,7 +65,7 @@
      &      isurf_id_in, knot_set_id_in, &
      &      kq1np_tab, iq1np_tab, iq1np_bulk_tab,&
      &      q1np_wtab, q1np_ktab, q1np_cptab, nweight_max, csv_surf_id_in, &
-     &      numelq1np_out)
+     &      numelq1np_out, kq1np_ielem0)
         use q1np_geom_mod, only : q1np_get_knot_vectors
   !C-----------------------------------------------
   !C   D u m m y   A r g u m e n t s
@@ -128,6 +128,7 @@
       integer, intent(in) :: nweight_max
       integer, intent(in) :: csv_surf_id_in
       integer, intent(out) :: numelq1np_out
+      integer, intent(in), optional :: kq1np_ielem0
       integer, intent(inout) :: kq1np_tab(:,:)
       integer, intent(inout) :: iq1np_tab(:)
       integer, intent(inout) :: iq1np_bulk_tab(:)
@@ -138,6 +139,7 @@
   !   L o c a l   V a r i a b l e s
   !C-----------------------------------------------
       INTEGER ISEG,IEL,IEL_HEX8
+      INTEGER KQ1NP_KCOL0
       INTEGER ISURF_ID            ! Selected internal surface index for generation
       INTEGER NODES_SURF(4)       ! Surface segment node IDs
       INTEGER NODES_BULK(4)       ! Bulk face node IDs from HEX8
@@ -224,6 +226,7 @@
       ENDIF
   !C     GRID_NODE: leading dimension NSEG*4 so (NX+1,NY+1) always fits (NX*NY=NSEG).
       ALLOCATE(GRID_NODE(NSEG*4, NSEG*4), STAT=IEL)
+      GRID_NODE(1:NSEG*4,1:NSEG*4) = 0
       IF (IEL .NE. 0) THEN
         DEALLOCATE(SEG_I, SEG_J, GRID_TO_SEG)
         CALL ANCMSG(MSGID=268,ANMODE=ANINFO,MSGTYPE=MSGERROR,C1='GRID_NODE')
@@ -286,16 +289,20 @@
       ! NCP is the total number of control points
       NCP = NCP_U * NCP_V
 
+      KQ1NP_KCOL0 = 0
+      IF (PRESENT(kq1np_ielem0)) KQ1NP_KCOL0 = kq1np_ielem0
+
   !C=======================================================================
   !C   Step 3b: Validate passed storage against actual surface topology
   !C=======================================================================
-      IF (SIZE(KQ1NP_TAB,1) < NKQ1NP .OR. SIZE(KQ1NP_TAB,2) < NSEG) THEN
+      IF (SIZE(KQ1NP_TAB,1) < NKQ1NP .OR. &
+     &    SIZE(KQ1NP_TAB,2) < KQ1NP_KCOL0 + NSEG) THEN
         WRITE(IOUT,'(A,4I10)') &
      &    ' Q1NP ERROR: KQ1NP_TAB too small, need/have = ', &
-     &    NKQ1NP, NSEG, SIZE(KQ1NP_TAB,1), SIZE(KQ1NP_TAB,2)
+     &    NKQ1NP, KQ1NP_KCOL0 + NSEG, SIZE(KQ1NP_TAB,1), SIZE(KQ1NP_TAB,2)
         WRITE(*,'(A,4I10)') &
      &    ' Q1NP ERROR: KQ1NP_TAB too small, need/have = ', &
-     &    NKQ1NP, NSEG, SIZE(KQ1NP_TAB,1), SIZE(KQ1NP_TAB,2)
+     &    NKQ1NP, KQ1NP_KCOL0 + NSEG, SIZE(KQ1NP_TAB,1), SIZE(KQ1NP_TAB,2)
         CALL ANCMSG(MSGID=364, MSGTYPE=MSGERROR, ANMODE=ANINFO, &
      &      C1='Q1NP KQ1NP_TAB too small')
         NUMELQ1NP_OUT = 0
@@ -389,7 +396,7 @@
       WEIGHT_CURRENT = Q1NP_GRID_NODE_WEIGHT
       CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD, &
-     &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,     &
+     &     GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,     &
      &     IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT, &
      &     CSV_SURF_ID_IN )
 
@@ -399,7 +406,7 @@
   !C=======================================================================
       CALL Q1NP_SELECT_GLOBAL_CP_ORIENTATION(NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
      &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, &
-     &     NIXS, NUMELS, X, IOUT)
+     &     NIXS, NUMELS, X, IOUT, MAX_CP_U,MAX_CP_V)
 
   !C=======================================================================
   !C   Step 5c: Report top-surface fit quality against original surface grid
@@ -514,21 +521,21 @@
   !C=======================================================================
   !C         Step 6b:   Store element properties in KQ1NP_TAB (main INT table)
   !C=======================================================================
-          KQ1NP_TAB(1,IEL_Q1NP) = MID              ! Material ID
-          KQ1NP_TAB(2,IEL_Q1NP) = PID              ! Property ID
-          KQ1NP_TAB(3,IEL_Q1NP) = NCTRL            ! Number of control points
-          KQ1NP_TAB(4,IEL_Q1NP) = OFFSET_CTRL      ! Offset to control points
-          KQ1NP_TAB(5,IEL_Q1NP) = ELEM_ID          ! Element ID (original HEX)
-          KQ1NP_TAB(6,IEL_Q1NP) = I-1              ! Element index u (0-based)
-          KQ1NP_TAB(7,IEL_Q1NP) = J-1              ! Element index v (0-based)
-          KQ1NP_TAB(8,IEL_Q1NP) = P                ! NURBS degree p
-          KQ1NP_TAB(9,IEL_Q1NP) = Q                ! NURBS degree q
-          KQ1NP_TAB(14,IEL_Q1NP) = OFFSET_BULK     ! Offset into IQ1NP_BULK_TAB
-          KQ1NP_TAB(10,IEL_Q1NP) = IEL_ORIG        ! Local HEX8 index
-          KQ1NP_TAB(11,IEL_Q1NP) = IPARTS(IEL_ORIG)! Owning part ID
-          KQ1NP_TAB(12,IEL_Q1NP) = NX              ! Surface grid element count in u (engine knot sizing)
-          KQ1NP_TAB(13,IEL_Q1NP) = NY              ! Surface grid element count in v (engine knot sizing)
-          KQ1NP_TAB(15,IEL_Q1NP) = knot_set_id_in ! Knot-set selection for per-element knot vectors
+          KQ1NP_TAB(1,IEL_Q1NP + KQ1NP_KCOL0) = MID              ! Material ID
+          KQ1NP_TAB(2,IEL_Q1NP + KQ1NP_KCOL0) = PID              ! Property ID
+          KQ1NP_TAB(3,IEL_Q1NP + KQ1NP_KCOL0) = NCTRL            ! Number of control points
+          KQ1NP_TAB(4,IEL_Q1NP + KQ1NP_KCOL0) = OFFSET_CTRL      ! Offset to control points
+          KQ1NP_TAB(5,IEL_Q1NP + KQ1NP_KCOL0) = ELEM_ID          ! Element ID (original HEX)
+          KQ1NP_TAB(6,IEL_Q1NP + KQ1NP_KCOL0) = I-1              ! Element index u (0-based)
+          KQ1NP_TAB(7,IEL_Q1NP + KQ1NP_KCOL0) = J-1              ! Element index v (0-based)
+          KQ1NP_TAB(8,IEL_Q1NP + KQ1NP_KCOL0) = P                ! NURBS degree p
+          KQ1NP_TAB(9,IEL_Q1NP + KQ1NP_KCOL0) = Q                ! NURBS degree q
+          KQ1NP_TAB(14,IEL_Q1NP + KQ1NP_KCOL0) = OFFSET_BULK     ! Offset into IQ1NP_BULK_TAB
+          KQ1NP_TAB(10,IEL_Q1NP + KQ1NP_KCOL0) = IEL_ORIG        ! Local HEX8 index
+          KQ1NP_TAB(11,IEL_Q1NP + KQ1NP_KCOL0) = IPARTS(IEL_ORIG)! Owning part ID
+          KQ1NP_TAB(12,IEL_Q1NP + KQ1NP_KCOL0) = NX              ! Surface grid element count in u (engine knot sizing)
+          KQ1NP_TAB(13,IEL_Q1NP + KQ1NP_KCOL0) = NY              ! Surface grid element count in v (engine knot sizing)
+          KQ1NP_TAB(15,IEL_Q1NP + KQ1NP_KCOL0) = knot_set_id_in  ! Knot-set selection for per-element knot vectors
 
   !C=======================================================================
   !C         Step 6c: Store control point connectivity in IQ1NP_TAB (CP node IDs)
@@ -573,7 +580,7 @@
      &     ' with reduced grid weight = ', WEIGHT_CURRENT
           CALL Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &       NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD, &
-     &       GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,       &
+     &       GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,       &
      &       IQ1NP_CP_METHOD, DIV, WEIGHT_CURRENT, &
      &       CSV_SURF_ID_IN )
           CALL Q1NP_REPORT_FIT_ERROR(NX, NY, P, Q, NCP_U, NCP_V, &
@@ -581,7 +588,7 @@
         ENDIF
         NJAC_FAIL = 0
         DO I = 1, NUMELQ1NP_OUT
-          CALL Q1NP_COMPUTE_VOLUME_ELEMENT(I, KQ1NP_TAB, IQ1NP_TAB, &
+          CALL Q1NP_COMPUTE_VOLUME_ELEMENT(I + KQ1NP_KCOL0, KQ1NP_TAB, IQ1NP_TAB, &
      &       IQ1NP_BULK_TAB, Q1NP_KTAB, X, NX, NY, VOL_CHECK, &
      &       DETJ_MIN_EL, Q1NP_CPTAB)
           IF (VOL_CHECK <= ZERO .OR. DETJ_MIN_EL <= Q1NP_DETJ_THRESHOLD) THEN
@@ -617,10 +624,12 @@
       IF (q1np_export_csv) THEN
         CALL Q1NP_EXPORT_NURBS_CSV(NCP_U,NCP_V,MAX_CP_U,MAX_CP_V, &
      &      Q1NP_CPTAB,CP_MAP, &
-     &      NUMELQ1NP_OUT,KQ1NP_TAB, &
+     &      NUMELQ1NP_OUT,&
+     &      KQ1NP_TAB(:, 1 + KQ1NP_KCOL0 : NUMELQ1NP_OUT + KQ1NP_KCOL0), &
      &      IQ1NP_TAB,IQ1NP_BULK_TAB,NUMNOD,CSV_SURF_ID_IN)
         CALL Q1NP_EXPORT_BULK_NODES_CSV(NUMELQ1NP_OUT, NUMNOD, &
-     &      KQ1NP_TAB,IQ1NP_BULK_TAB,X,CSV_SURF_ID_IN)
+     &      KQ1NP_TAB(:, 1 + KQ1NP_KCOL0 : NUMELQ1NP_OUT + KQ1NP_KCOL0), &
+     &      IQ1NP_BULK_TAB,X,CSV_SURF_ID_IN)
       ENDIF
 
   !C     Inform Q1NP_RESTART_MOD of total control-point buffer length (for restart I/O).
@@ -640,8 +649,9 @@
         WRITE(IOUT,301) NUMELQ1NP_OUT, NX, NY, NCP_U, NCP_V
         WRITE(IOUT,302)
         DO I=1,MIN(50,NUMELQ1NP_OUT)
-          WRITE(IOUT,303) I, KQ1NP_TAB(5,I), KQ1NP_TAB(1,I), &
-     &      KQ1NP_TAB(2,I), KQ1NP_TAB(6,I), KQ1NP_TAB(7,I)
+          WRITE(IOUT,303) I, KQ1NP_TAB(5,I + KQ1NP_KCOL0), KQ1NP_TAB(1,I + KQ1NP_KCOL0), &
+     &      KQ1NP_TAB(2,I + KQ1NP_KCOL0), KQ1NP_TAB(6,I + KQ1NP_KCOL0), &
+     &      KQ1NP_TAB(7,I + KQ1NP_KCOL0)
         ENDDO
         IF (NUMELQ1NP_OUT > 50) THEN
           WRITE(IOUT,304) NUMELQ1NP_OUT - 50
@@ -682,7 +692,7 @@
 !C=======================================================================
            SUBROUTINE Q1NP_FIT_CONTROL_POINTS( NX, NY, P, Q,           &
      &     NCP_U, NCP_V, NCP, NDATA, NKNOT_U, NKNOT_V, NUMNOD,    &
-     &     GRID_NODE, X, Q1NP_KTAB, CP_MAP, Q1NP_CPTAB,           &
+     &     GRID_NODE, X, Q1NP_KTAB, Q1NP_CPTAB,           &
      &     ICP_METHOD_IN, DIV_IN, WEIGHT_IN,           &
      &     CSV_SURF_ID_IN )
 
@@ -697,8 +707,7 @@
         INTEGER, INTENT(IN) :: NKNOT_U, NKNOT_V, NUMNOD
         INTEGER, INTENT(IN) :: GRID_NODE(:,:)
         REAL(WP), INTENT(IN) :: X(3,NUMNOD)
-        REAL(WP), INTENT(IN) :: Q1NP_KTAB(:)
-        INTEGER, INTENT(IN) :: CP_MAP(:,:)
+        REAL(WP), INTENT(IN) :: Q1NP_KTAB(:)   
         INTEGER, INTENT(IN) :: ICP_METHOD_IN, DIV_IN
         REAL(WP), INTENT(IN) :: WEIGHT_IN
         INTEGER, INTENT(IN) :: CSV_SURF_ID_IN
@@ -1380,7 +1389,8 @@
 !C   the best consistent top-vs-bulk orientation over all active patches.
 !C=======================================================================
       SUBROUTINE Q1NP_SELECT_GLOBAL_CP_ORIENTATION(NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, &
-     &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, NIXS, NUMELS, X, IOUT)
+     &     CP_MAP, Q1NP_CPTAB, Q1NP_KTAB, GRID_NODE, GRID_TO_SEG, IXS, NIXS, NUMELS, X, IOUT, &
+     &     MAX_CP_U,MAX_CP_V)
   !C-----------------------------------------------
   !C   M o d u l e s
   !C-----------------------------------------------
@@ -1392,7 +1402,8 @@
   !C   D u m m y   A r g u m e n t s
   !C-----------------------------------------------
         INTEGER, INTENT(IN) :: NX, NY, P, Q, NCP_U, NCP_V, NCP, NUMNOD, NIXS, NUMELS, IOUT
-        INTEGER, INTENT(INOUT) :: CP_MAP(:,:)
+        INTEGER, INTENT(IN) :: MAX_CP_U,MAX_CP_V
+        INTEGER, INTENT(INOUT) :: CP_MAP(MAX_CP_U,MAX_CP_V)
         INTEGER, INTENT(IN) :: GRID_NODE(NX+1,NY+1), GRID_TO_SEG(NX,NY), IXS(NIXS,NUMELS)
         REAL(KIND=WP), INTENT(IN) :: Q1NP_CPTAB(3,NCP), Q1NP_KTAB(:), X(3,NUMNOD)
   !C-----------------------------------------------
@@ -1559,7 +1570,7 @@
   !C-----------------------------------------------
         INTEGER, INTENT(IN) :: I_ELEM, J_ELEM, P_ELEM, Q_ELEM
         INTEGER, INTENT(IN) :: MAX_CP_U, MAX_CP_V, NCP, NUMNOD
-        INTEGER, INTENT(IN) :: CP_MAP(:,:)
+        INTEGER, INTENT(IN) :: CP_MAP(MAX_CP_U,MAX_CP_V)
         INTEGER, INTENT(IN) :: NODES_BULK(4)
         REAL(KIND=WP), INTENT(IN) :: Q1NP_CPTAB(3,NCP), X(3,NUMNOD)
         REAL(KIND=WP), INTENT(OUT) :: TOP_MAG, BOT_MAG, TOP_BOT_DOT, TOP_BOT_COS

@@ -318,7 +318,7 @@ C-----------------------------------------------
       INTEGER,INTENT(IN) :: IPARI(NPARI,NINTER)
       my_real,INTENT(IN) :: FACLOAD(LFACLOAD,*)
       my_real
-     .   ELBUF(*), MS(*), IN(*), V(*), GEO(*),PM(NPROPM,*),
+     .   ELBUF(*), MS(*), IN(*), V(*), X(*), GEO(*),PM(NPROPM,*),
      .   RBY(NRBY,*),PLD(*),VEUL(*),SKEW(LSKEW,*),FILL(*),
      .   THK(*),BUFSF(*), VR(3,*),BUFMAT(*),PTG(3,*),XLAS(*),
      .   DTELEM(*),MSS(*), MSQ(*),MSC(*),MST(*),MSP(*),MSR(*),
@@ -343,15 +343,10 @@ C-----------------------------------------------
      .   SIGTRUSS(NSIGTRUSS,*),TOTMAS, KNOTLOCPC(*),KNOTLOCEL(*),VNIGE(*),BNIGE(*),
      .   FXBGLM(*),FXBCPM(*),FXBCPS(*),FXBLM(*),FXBFLS(*),FXBDLS(*),FXB_MATRIX(*),
      .   RBY_INIAXIS(7,*),ALEA(*),DR(SDR)
-      my_real,TARGET :: X(*)
       my_real,INTENT(INOUT) :: TOTMAS1
 
       my_real, DIMENSION(NUMNOD*2), TARGET :: STIFN
       my_real , DIMENSION(:), POINTER :: STIFR
-      my_real , DIMENSION(:,:), POINTER :: X_Q1NP
-      INTEGER , DIMENSION(:,:), POINTER :: KQ1NP_TAB_Q1NP
-      INTEGER , DIMENSION(:), POINTER :: IQ1NP_TAB_Q1NP
-      INTEGER , DIMENSION(:), POINTER :: IQ1NP_BULK_TAB_Q1NP
 C
       INTEGER NOM_OPT(LNOPT1,*),PTR_NOPT_RBE2,PTR_NOPT_ADM,PTR_NOPT_FUN,IOPT
       INTEGER FXBNOD(*), FXANI(2,*),ITAGND(*)
@@ -2209,13 +2204,9 @@ C     Q1Np enriched element mass calculation
 C---------------------------------------------
       IF (NUMELQ1NP_G > 0) THEN
 C       Initialize per-Gauss-point Q1NP reference volumes in ELBUF/LBUF
-        X_Q1NP(1:3,1:NUMNOD) => X(1:3*NUMNOD)
-        KQ1NP_TAB_Q1NP(1:15,1:NUMELQ1NP_G) => KQ1NP_TAB(1:15,1:NUMELQ1NP_G)
-        IQ1NP_TAB_Q1NP(1:SIQ1NP_G) => IQ1NP_TAB(1:SIQ1NP_G)
-        IQ1NP_BULK_TAB_Q1NP(1:SQ1NPBULK_G) => IQ1NP_BULK_TAB(1:SQ1NPBULK_G)
         CALL Q1NP_INIT_LBUF_GP_VOL(
-     .     IPARG, ELBUF_TAB, X_Q1NP, NUMELS,
-     .     KQ1NP_TAB_Q1NP, IQ1NP_TAB_Q1NP, IQ1NP_BULK_TAB_Q1NP)
+     .     IPARG, ELBUF_TAB, X, NUMNOD, NUMELS,
+     .     KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB)
 
 C       Reconstruct scalar GBUF%VOL from per-Gauss Q1NP volumes.
         IF (ASSOCIATED(Q1NP_KTAB_G) .AND. Q1NP_NX_G > 0 .AND. Q1NP_NY_G > 0) THEN
@@ -2338,9 +2329,9 @@ C       3.Step: Call Q1Np mass calculation routine
 C=======================================================================
         CALL Q1NP_MASS3(
      .     RHO_HEX8, MS, MSSA, PARTSAV, X, V,
-     .     FILL_HEX8, IPARG, ELBUF_TAB, KQ1NP_TAB, IQ1NP_TAB_Q1NP, IQ1NP_BULK_TAB_Q1NP,
+     .     FILL_HEX8, IPARG, ELBUF_TAB, KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
      .     NUMELQ1NP_G, NPROPM, NUMMAT, PM,
-     .     NUMELS, NUMNOD, NPART, Q1NP_KTAB_G)
+     .     NUMELS, NUMNOD, NPART, Q1NP_KTAB_G, SFILL)
 
 C=======================================================================
 C       4.Step: Deallocate temporary arrays

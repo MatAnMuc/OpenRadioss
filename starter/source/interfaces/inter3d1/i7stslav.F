@@ -26,7 +26,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    inintr1         ../starter/source/interfaces/interf1/inintr1.F
 !||--- uses       -----------------------------------------------------
 !||====================================================================
-      SUBROUTINE I7STSECND(IPARI,STIFINT,INTBUF_TAB, STIF_STS )
+      SUBROUTINE I7STSECND(IPARI,STIFINT,INTBUF_TAB)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -58,9 +58,6 @@ C---------------------------------------------
         J=INTBUF_TAB%NSV(I)
         IF(INTBUF_TAB%STFNS(I)/=ZERO)
      .     INTBUF_TAB%STFNS(I) = STIFINT(J)
-      !ADDITIONAL SWICH FOR CONTACT STIFFNESS CALCULATION (PREPARED)
-      !.     INTBUF_TAB%STFNS(I) = STIF_STS
-        !write(*,*) INTBUF_TAB%STFNS(I)
       ENDDO
 C
       RETURN

@@ -21,7 +21,7 @@
      &      rho, ms, mssa, partsav, x, v, &
      &      fill, iparg, elbuf_tab, kq1np_tab, iq1np_tab, iq1np_bulk_tab, &
      &      numelq1np_in, npropm, nummat, pm, &
-     &      numels, numnod, npart, q1np_ktab_g)
+     &      numels, numnod, npart, q1np_ktab_g,sfill)
 !-----------------------------------------------------------------------
           implicit none
 !-----------------------------------------------------------------------
@@ -32,14 +32,15 @@
           integer, intent(in) :: npropm, nummat
           integer, intent(in) :: iparg(:,:)
           integer, intent(in) :: kq1np_tab(15, numelq1np_in)
-          integer, intent(in) :: iq1np_tab(:)
-          integer, intent(in) :: iq1np_bulk_tab(:)
+          integer, intent(in) :: iq1np_tab(siq1np_g)
+          integer, intent(in) :: iq1np_bulk_tab(sq1npbulk_g)
+          integer, intent(in) :: sfill
           real(kind=WP), intent(in)    :: rho(:) 
           real(kind=WP), intent(in)    :: pm(npropm, nummat)
           real(kind=WP), intent(in)    :: q1np_ktab_g(:)
           type(ELBUF_STRUCT_), target, intent(in) :: elbuf_tab(:)
 
-          real(kind=WP), intent(in)    :: fill(numels)
+          real(kind=WP), intent(in)    :: fill(sfill)
           real(kind=WP), intent(inout) :: ms(numnod)
           real(kind=WP), intent(inout) :: mssa(numels)
           real(kind=WP), intent(inout) :: partsav(20,npart)
@@ -57,7 +58,7 @@
           integer :: nknot_u, nknot_v
           integer :: n_top, n_total, nx, ny
           integer :: node_id
-          real(kind=WP) :: rho_elem, rho_from_gbuf, rho_from_pm, fill_fac, fill_in
+          real(kind=WP) :: rho_elem, rho_from_gbuf, rho_from_pm, fill_fac
           real(kind=WP) :: xi, eta, zeta, vol_gp
           real(kind=WP) :: xx, yy, zz, xy, yz, zx
           real(kind=WP) :: mass_node_k, mass_total_el
@@ -149,14 +150,12 @@
             end if
             rho_elem = rho_from_gbuf
             if (rho_elem <= ZERO) rho_elem = rho_from_pm
-            fill_in = ZERO
-            if (iel_hex8 > 0 .and. iel_hex8 <= numels) then
-              fill_in = fill(iel_hex8)
-            end if
             fill_fac = ONE
-            if (fill_in > ZERO) then
-              fill_fac = fill_in
-            end if
+            if (sfill > 0) then
+              if (fill(iel_hex8) > ZERO) then
+                fill_fac = fill(iel_hex8)
+              end if
+            endif 
             rho_elem = fill_fac * rho_elem
 !-----------------------------------------------------------------------
 !     Build node list: NCTRL control points, then 4 bulk nodes

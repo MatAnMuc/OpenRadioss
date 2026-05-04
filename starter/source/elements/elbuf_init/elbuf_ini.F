@@ -229,7 +229,7 @@ c----
 c if xfem, count buffer's length only in the groups with xfem phantom elements  
 cc        IF (ICRACK3D > 0 .AND. IXFEM == 0) CYCLE
 c----
-                                                      
+         IS_Q1NP_GROUP = .FALSE.                                 
          IF (DEBUG_PRINT == 1) THEN
             print*,'**** GROUP,ITY,IGTYP,MLW=',ng,ity,igtyp,mlw
             print*,'     NPAR_TAB,NPAR_LAY,NPAR_LBUF=',NPAR_TAB,NPAR_LAY,NPAR_LBUF
@@ -260,7 +260,6 @@ c
 c=======================================================================
 
 C Check if this is a Q1NP group 
-          IS_Q1NP_GROUP = .FALSE.
           IF (ITY == 1) THEN
             NFT = IPARG(3,NG)
             IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN

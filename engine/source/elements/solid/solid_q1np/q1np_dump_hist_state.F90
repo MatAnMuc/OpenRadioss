@@ -31,7 +31,7 @@
 !||====================================================================
 ! Dump Q1NP bulk and control-point node coordinates to CSV (debug / post-processing).
 !=======================================================================
-      SUBROUTINE Q1NP_DUMP_HIST_STATE(TIME_CUR, X, ITAB, NUMNOD)
+      SUBROUTINE Q1NP_DUMP_HIST_STATE(TIME_CUR, X, NUMNOD)
 !-----------------------------------------------------------------------
 !   Dump Q1NP bulk and control-point node coordinates to CSV files.
 !   Only used for post-processing and debugging.
@@ -42,7 +42,6 @@
 !
 !   TIME_CUR : current physical time
 !   X        : current nodal coordinates, dimension (3,NUMNOD)
-!   ITAB     : nodal IDs for local indices (global IDs), dimension (NUMNOD)
 !-----------------------------------------------------------------------
       USE Q1NP_RESTART_MOD
       USE RESTMOD, ONLY: IQ1NP_TAB, IQ1NP_BULK_TAB, KQ1NP_TAB
@@ -54,8 +53,6 @@
       my_real, INTENT(IN) :: TIME_CUR
       INTEGER, INTENT(IN) :: NUMNOD
       my_real, INTENT(IN) :: X(3,NUMNOD)
-      INTEGER, INTENT(IN) :: ITAB(NUMNOD)
-
       INTEGER :: LUX_BULK
       INTEGER :: LUX_CP
       LOGICAL, SAVE :: FIRST_CALL     = .TRUE.
@@ -142,11 +139,11 @@
                     Q1NP_KTAB_OFF_G(ITMP), Q1NP_KTAB_LEN_G(ITMP)
             END DO
          ELSE
-            WRITE(99,'(A)') 'NX,NY,P,Q,NUMELQ1NP,SQ1NPCTRL_SHARED,SQ1NPBULK,'// &
-                            'SQ1NPKNOT_L'
-            WRITE(99,'(I10,1X,I10,1X,I5,1X,I5,1X,I10,1X,I10,1X,I10,1X,I10)') &
-                 Q1NP_NX_G, Q1NP_NY_G, P, Q, &
-                 NUMELQ1NP_G, SQ1NPCTRL_SHARED_G, SQ1NPBULK_G, SQ1NPKNOT_L_G
+         WRITE(99,'(A)') 'NX,NY,P,Q,NUMELQ1NP,SQ1NPCTRL_SHARED,SQ1NPBULK,'// &
+                         'SQ1NPKNOT_L'
+         WRITE(99,'(I10,1X,I10,1X,I5,1X,I5,1X,I10,1X,I10,1X,I10,1X,I10)') &
+              Q1NP_NX_G, Q1NP_NY_G, P, Q, &
+              NUMELQ1NP_G, SQ1NPCTRL_SHARED_G, SQ1NPBULK_G, SQ1NPKNOT_L_G
          END IF
          CLOSE(99)
 
@@ -217,7 +214,7 @@
                OUT_ID = GID
                IF (ALLOCATED(ITAB_DEBUG)) THEN
                   IF (LID <= SIZE(ITAB_DEBUG)) OUT_ID = ITAB_DEBUG(LID)
-               END IF
+                     END IF
 
                WRITE(LUX_CP, &
                     '(ES23.15,1X,I10,3(1X,ES23.15))') &
@@ -241,7 +238,7 @@
             OUT_ID = GID
             IF (ALLOCATED(ITAB_DEBUG)) THEN
                IF (LID <= SIZE(ITAB_DEBUG)) OUT_ID = ITAB_DEBUG(LID)
-            END IF
+                  END IF
 
             WRITE(LUX_BULK, &
                  '(ES23.15,1X,I10,3(1X,ES23.15))') &

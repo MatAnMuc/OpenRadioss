@@ -850,7 +850,7 @@ C-----------------------------------------------
 C
       INTEGER, DIMENSION(:),ALLOCATABLE ::
      *        KNOD2ELS_NEW,KNOD2ELC_NEW,KNOD2ELTG_NEW,
-     *        KNOD2EL1D_NEW,KNOD2ELQ_NEW,NOD2ELS_NEW
+     *        KNOD2EL1D_NEW,KNOD2ELQ_NEW,KNOD2ELIG3D_NEW,NOD2ELS_NEW
 C
       INTEGER MAXQ1NPCTRL,
      .        SQ1NPBEZ_L,
@@ -905,12 +905,14 @@ C     Prototype: smooth (generate Q1NP for) SURF IDs 100 and 200.
       INTEGER IEL, IEL_HEX8, OFFSET_CTRL, OFFSET_BULK, N_CTRL
       INTEGER NODE_BULK(4), NODE_CP
       INTEGER NP_U_Q1NP, NP_V_Q1NP, NP_T_Q1NP
+      INTEGER SIZE_OLD
       INTEGER GP_INDEX, IT, PROC
       INTEGER NODE_SRC, Q1NP_FRONT_MISSING
 C
       INTEGER, DIMENSION(:,:), ALLOCATABLE :: KQ1NP_TAB
       INTEGER, DIMENSION(:),   ALLOCATABLE :: IQ1NP_TAB
       INTEGER, DIMENSION(:),   ALLOCATABLE :: IQ1NP_BULK_TAB
+      INTEGER, DIMENSION(:),   ALLOCATABLE :: IRESIZE_TMP
       my_real, DIMENSION(:),   ALLOCATABLE, TARGET :: Q1NP_KTAB
       my_real, DIMENSION(:),   ALLOCATABLE :: Q1NP_WTAB
       my_real, DIMENSION(:,:), ALLOCATABLE :: Q1NP_CPTAB
@@ -1345,7 +1347,7 @@ C RWALL PENALTY
       INTEGER :: SLN_PEN
       my_real, DIMENSION(:), ALLOCATABLE :: RWSTIF_PEN
 
-      integer, parameter :: nb_key = 8 
+      integer, parameter :: nb_key = 9 
       integer :: iwarnhb,n_entity
       integer :: sh4tree_dim1,sh4tree_dim2,sh3tree_dim1,sh3tree_dim2
       type(elm_group_) :: elm_group
@@ -3595,8 +3597,7 @@ C
      E       RIGE_TMP(IDXIGE1)%ptr2,XIGE_TMP(IDXIGE1)%ptr2,
      F       VIGE_TMP(IDXIGE1)%ptr2,IADTABIGE,DECALIGEO,IADBOXMAX,KNOD2ELQ,
      G       NOD2ELQ   ,SUBSETS   ,IGRBRIC   ,IGRSH4N   ,IGRSH3N   ,
-     F       KNOTLOCPC ,KNOTLOCEL ,NSETS     ,MAP_TABLES,
-     H       KQ1NP_TAB ,IQ1NP_TAB ,IQ1NP_BULK_TAB)
+     F       KNOTLOCPC ,KNOTLOCEL ,NSETS     ,MAP_TABLES)
 C
 C- Isogeometric Elements
         ALLOCATE(NIGE_TMP(IDXIGE2)%ptr(SNIGE+NUMFAKENODIGEO)   ,STAT=stat)
@@ -3659,8 +3660,7 @@ C       fill, 1st level surfaces
      E       RIGE_TMP(IDXIGE2)%ptr2,XIGE_TMP(IDXIGE2)%ptr2,
      F       VIGE_TMP(IDXIGE2)%ptr2,IADTABIGE,DECALIGEO,IADBOXMAX,KNOD2ELQ,
      G       NOD2ELQ   ,SUBSETS   ,IGRBRIC   ,IGRSH4N   ,IGRSH3N   ,
-     H       KNOTLOCPC ,KNOTLOCEL ,NSETS     ,MAP_TABLES,
-     I       KQ1NP_TAB ,IQ1NP_TAB ,IQ1NP_BULK_TAB)
+     H       KNOTLOCPC ,KNOTLOCEL ,NSETS     ,MAP_TABLES)
 C
 c        IF(NUMELIG3D>0) THEN
         IF(NUMFAKENODIGEO>0) THEN
@@ -3853,7 +3853,7 @@ C           Conservative fallback to avoid underallocation if the topology
 C           pre-pass fails. GENQ1NP will still do the authoritative check.
             NX_EST = NSEG_SURF
             NY_EST = 1
-            WRITE(IOUT,'(A,I6,A,I6,A)') 
+            WRITE(IOUT,'(A,I6,A,I6,A)')
      .        ' Q1NP WARNING: pre-sizing fallback used for SURF_ID_A=',
      .        ISURF_ID_A, ' (grid ierr=', IERR_Q1NP_GRID, ').'
           ENDIF
@@ -3945,28 +3945,28 @@ C         Bases for appending surface B results.
           DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
      .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
           ALLOCATE(KQ1NP_TAB(NKQ1NP,NUMELQ1NP_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='KQ1NP_TAB')
           ALLOCATE(IQ1NP_TAB(SIQ1NP_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='IQ1NP_TAB')
           ALLOCATE(IQ1NP_BULK_TAB(SQ1NPBULK_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='IQ1NP_BULK_TAB')
           ALLOCATE(Q1NP_WTAB(SQ1NPWEIGHT_L_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='Q1NP_WTAB')
           ALLOCATE(Q1NP_KTAB(SQ1NPKNOT_L_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='Q1NP_KTAB')
           IF(SQ1NPCTRL_SHARED_G > 0) THEN
             ALLOCATE(Q1NP_CPTAB(3,SQ1NPCTRL_SHARED_G) ,STAT=stat)
-            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                              MSGTYPE=MSGERROR,
      .                              C1='Q1NP_CPTAB')
           ENDIF
@@ -3994,13 +3994,14 @@ C         Generate Q1NP elements from surface B (knot_set_id=2).
           CALL GENQ1NP(IGRSURF,IXS,X,IPARTS,
      .                 NSURF,NIXS,NUMNOD,NUMELS,IOUT,
      .                 ISURF_ID_B, 2,
-     .                 KQ1NP_TAB(:,NSEG_SURF+1:NUMELQ1NP_G),
+     .                 KQ1NP_TAB,
      .                 IQ1NP_TAB(IQ1NP_CTRL_BASE_B+1:IQ1NP_CTRL_BASE_B+SIQ1NP_B),
      .                 IQ1NP_BULK_TAB(IQ1NP_BULK_BASE_B+1:IQ1NP_BULK_BASE_B+SQ1NPBULK_B),
      .                 Q1NP_WTAB(CP_BASE_B+1:CP_BASE_B+SQ1NPCTRL_SHARED_B),
      .                 Q1NP_KTAB(Q1NP_KTAB_BASE_B+1:Q1NP_KTAB_BASE_B+SQ1NPKNOT_L_B),
      .                 Q1NP_CPTAB(:,CP_BASE_B+1:CP_BASE_B+SQ1NPCTRL_SHARED_B),
-     .                 SQ1NPCTRL_SHARED_B, SURF_ID_B, NUMELQ1NP_B_OUT)
+     .                 SQ1NPCTRL_SHARED_B, SURF_ID_B, NUMELQ1NP_B_OUT,
+     .                 NSEG_SURF)
 
 C         Shift control-point IDs in IQ1NP_TAB for appended surface B.
           DO I = IQ1NP_CTRL_BASE_B+1, IQ1NP_CTRL_BASE_B+SIQ1NP_B
@@ -4118,28 +4119,28 @@ C         Single surface A only (B missing or has no segments).
           DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
      .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
           ALLOCATE(KQ1NP_TAB(NKQ1NP,NUMELQ1NP_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='KQ1NP_TAB')
           ALLOCATE(IQ1NP_TAB(SIQ1NP_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='IQ1NP_TAB')
           ALLOCATE(IQ1NP_BULK_TAB(SQ1NPBULK_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='IQ1NP_BULK_TAB')
           ALLOCATE(Q1NP_WTAB(SQ1NPWEIGHT_L_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='Q1NP_WTAB')
           ALLOCATE(Q1NP_KTAB(SQ1NPKNOT_L_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='Q1NP_KTAB')
           IF(SQ1NPCTRL_SHARED_G > 0) THEN
             ALLOCATE(Q1NP_CPTAB(3,SQ1NPCTRL_SHARED_G) ,STAT=stat)
-            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                              MSGTYPE=MSGERROR,
      .                              C1='Q1NP_CPTAB')
           ENDIF
@@ -4244,28 +4245,28 @@ C         Single surface B only (A missing or has no segments).
           DEALLOCATE(KQ1NP_TAB, IQ1NP_TAB, IQ1NP_BULK_TAB,
      .               Q1NP_WTAB, Q1NP_KTAB, Q1NP_CPTAB)
           ALLOCATE(KQ1NP_TAB(NKQ1NP,NUMELQ1NP_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='KQ1NP_TAB')
           ALLOCATE(IQ1NP_TAB(SIQ1NP_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='IQ1NP_TAB')
           ALLOCATE(IQ1NP_BULK_TAB(SQ1NPBULK_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='IQ1NP_BULK_TAB')
           ALLOCATE(Q1NP_WTAB(SQ1NPWEIGHT_L_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='Q1NP_WTAB')
           ALLOCATE(Q1NP_KTAB(SQ1NPKNOT_L_G) ,STAT=stat)
-          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+          IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                            MSGTYPE=MSGERROR,
      .                            C1='Q1NP_KTAB')
           IF(SQ1NPCTRL_SHARED_G > 0) THEN
             ALLOCATE(Q1NP_CPTAB(3,SQ1NPCTRL_SHARED_G) ,STAT=stat)
-            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANSTOP,
      .                              MSGTYPE=MSGERROR,
      .                              C1='Q1NP_CPTAB')
           ENDIF
@@ -4338,7 +4339,7 @@ C         Only when IDEBUG_Q1NP >= 2
             print *, 'NEW Q1NP-GAUSS-SCHEMA:'
             print *, '=============================================='
             WRITE(*,'(A)') '   ---- Q1NP GAUSS QUADRATURE SCHEME ----'
-            WRITE(*,'(A, I3, 3A, I3, 3A, I3)') 
+            WRITE(*,'(A, I3, A, I3, A, I3)')
      .        '      U points: ', Q1NP_NP_U_G, 
      .        '   |  V points: ', Q1NP_NP_V_G, 
      .        '   |  T points: ', Q1NP_NP_T_G
@@ -4627,6 +4628,24 @@ C                 DSDOF was not allocated, allocate it now
               ENDIF
             ENDIF
 
+C-----------------------------------------------------------------------
+C           ADDCNE / ADDCNE_PXFEM sized at first alloc (lectur ~1472);
+C           DOMETIS uses ADDCNE as ADSKY(0:*) with loops 1:NUMNOD+1.
+C           Reallocate if Q1NP promotion increased NUMNOD.
+C-----------------------------------------------------------------------
+            IF (NUMNOD > NUMNOD_OLD) THEN
+              IF (ALLOCATED(ADDCNE)) DEALLOCATE(ADDCNE, STAT=stat)
+              ALLOCATE(ADDCNE(0:NUMNOD+1), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR, C1='ADDCNE')
+              ADDCNE(0:NUMNOD+1) = 0
+              IF (ALLOCATED(ADDCNE_PXFEM)) DEALLOCATE(ADDCNE_PXFEM, STAT=stat)
+              ALLOCATE(ADDCNE_PXFEM(0:NUMNOD+1), STAT=stat)
+              IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                           MSGTYPE=MSGERROR, C1='ADDCNE_PXFEM')
+              ADDCNE_PXFEM(0:NUMNOD+1) = 0
+            ENDIF
+
 C=======================================================================
 C           Keep BC storage consistent with the promoted node count
 C=======================================================================
@@ -4735,94 +4754,6 @@ C=======================================================================
 C           Step 8: Update NUMNOD0
 C=======================================================================
             IF (NUMNOD_CP_ADDED > 0) THEN
-              NUMNOD0 = NUMNOD
-C=======================================================================
-C           Step 9: Resize node->element mappings after CP promotion
-C=======================================================================
-C           KNOD2* arrays are dimensioned with NUMNOD+1. If NUMNOD has
-C           increased due to Q1NP promotion, enlarge them and preserve
-C           existing contents so that subsequent calls see a consistent topology.
-C-----------------------------------------------------------------------
-              IF (ALLOCATED(KNOD2ELS)) THEN
-                IF (SIZE(KNOD2ELS) < NUMNOD+1) THEN
-                  ALLOCATE(KNOD2ELS_NEW(NUMNOD+1),STAT=stat)
-                  IF (STAT /= 0) THEN
-                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
-     .                           MSGTYPE=MSGERROR,
-     .                           C1='KNOD2ELS_NEW')
-                  ELSE
-                    KNOD2ELS_NEW = 0
-                    KNOD2ELS_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELS))) =
-     .                           KNOD2ELS(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELS)))
-                    DEALLOCATE(KNOD2ELS,STAT=stat)
-                    CALL MOVE_ALLOC(KNOD2ELS_NEW,KNOD2ELS)
-                  ENDIF
-                ENDIF
-              ENDIF
-              IF (ALLOCATED(KNOD2ELC)) THEN
-                IF (SIZE(KNOD2ELC) < NUMNOD+1) THEN
-                  ALLOCATE(KNOD2ELC_NEW(NUMNOD+1),STAT=stat)
-                  IF (STAT /= 0) THEN
-                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
-     .                           MSGTYPE=MSGERROR,
-     .                           C1='KNOD2ELC_NEW')
-                  ELSE
-                    KNOD2ELC_NEW = 0
-                    KNOD2ELC_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELC))) =
-     .                           KNOD2ELC(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELC)))
-                    DEALLOCATE(KNOD2ELC,STAT=stat)
-                    CALL MOVE_ALLOC(KNOD2ELC_NEW,KNOD2ELC)
-                  ENDIF
-                ENDIF
-              ENDIF
-              IF (ALLOCATED(KNOD2ELTG)) THEN
-                IF (SIZE(KNOD2ELTG) < NUMNOD+1) THEN
-                  ALLOCATE(KNOD2ELTG_NEW(NUMNOD+1),STAT=stat)
-                  IF (STAT /= 0) THEN
-                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
-     .                           MSGTYPE=MSGERROR,
-     .                           C1='KNOD2ELTG_NEW')
-                  ELSE
-                    KNOD2ELTG_NEW = 0
-                    KNOD2ELTG_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELTG))) =
-     .                           KNOD2ELTG(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELTG)))
-                    DEALLOCATE(KNOD2ELTG,STAT=stat)
-                    CALL MOVE_ALLOC(KNOD2ELTG_NEW,KNOD2ELTG)
-                  ENDIF
-                ENDIF
-              ENDIF
-              IF (ALLOCATED(KNOD2EL1D)) THEN
-                IF (SIZE(KNOD2EL1D) < NUMNOD+1) THEN
-                  ALLOCATE(KNOD2EL1D_NEW(NUMNOD+1),STAT=stat)
-                  IF (STAT /= 0) THEN
-                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
-     .                           MSGTYPE=MSGERROR,
-     .                           C1='KNOD2EL1D_NEW')
-                  ELSE
-                    KNOD2EL1D_NEW = 0
-                    KNOD2EL1D_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2EL1D))) =
-     .                           KNOD2EL1D(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2EL1D)))
-                    DEALLOCATE(KNOD2EL1D,STAT=stat)
-                    CALL MOVE_ALLOC(KNOD2EL1D_NEW,KNOD2EL1D)
-                  ENDIF
-                ENDIF
-              ENDIF
-              IF (ALLOCATED(KNOD2ELQ)) THEN
-                IF (SIZE(KNOD2ELQ) < NUMNOD+1) THEN
-                  ALLOCATE(KNOD2ELQ_NEW(NUMNOD+1),STAT=stat)
-                  IF (STAT /= 0) THEN
-                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
-     .                           MSGTYPE=MSGERROR,
-     .                           C1='KNOD2ELQ_NEW')
-                  ELSE
-                    KNOD2ELQ_NEW = 0
-                    KNOD2ELQ_NEW(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELQ))) =
-     .                           KNOD2ELQ(1:MIN(NUMNOD_OLD+1,SIZE(KNOD2ELQ)))
-                    DEALLOCATE(KNOD2ELQ,STAT=stat)
-                    CALL MOVE_ALLOC(KNOD2ELQ_NEW,KNOD2ELQ)
-                  ENDIF
-                ENDIF
-              ENDIF
 C-----------------------------------------------------------------------
 C           NOD2ELS is sized from S_NOD2ELS; enlarge it for extra Q1NP
 C           node–element associations if needed, preserving existing data.
@@ -4879,9 +4810,214 @@ C-----------------------------------------------------------------------
               IENTRY2(1:NUMNOD) = -1
               FLAGKIN(1:NUMNOD) = 0
             ENDIF
-          ELSE
-            CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
-          ENDIF
+            
+C=======================================================================
+C             Step 9: Resize remaining NUMNOD-based arrays
+C=======================================================================
+            IF (NUMNOD_CP_ADDED > 0) THEN
+C              
+              IF (ALLOCATED(ICODE)) THEN
+                SIZE_OLD = SIZE(ICODE)
+                IF (SIZE_OLD < NUMNOD) THEN
+                  SICODE = NUMNOD
+                  ALLOCATE(IRESIZE_TMP(NUMNOD), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ICODE_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = ICODE(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, ICODE)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(ISKEW)) THEN
+                SIZE_OLD = SIZE(ISKEW)
+                IF (SIZE_OLD < NUMNOD) THEN
+                  SISKEW = NUMNOD
+                  ALLOCATE(IRESIZE_TMP(NUMNOD), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ISKEW_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = ISKEW(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, ISKEW)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(ADDCNE)) THEN
+                SIZE_OLD = SIZE(ADDCNE)
+                IF (SIZE_OLD < NUMNOD+2) THEN
+                  ALLOCATE(IRESIZE_TMP(0:NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ADDCNE_TMP')
+                  ELSE
+                    IRESIZE_TMP(0:SIZE_OLD-1) = ADDCNE(0:SIZE_OLD-1)
+                    IRESIZE_TMP(SIZE_OLD:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, ADDCNE)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(ADDCNE_PXFEM)) THEN
+                SIZE_OLD = SIZE(ADDCNE_PXFEM)
+                IF (SIZE_OLD < NUMNOD+2) THEN
+                  ALLOCATE(IRESIZE_TMP(0:NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ADDCNE_PXFEM_TMP')
+                  ELSE
+                    IRESIZE_TMP(0:SIZE_OLD-1) = ADDCNE_PXFEM(0:SIZE_OLD-1)
+                    IRESIZE_TMP(SIZE_OLD:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, ADDCNE_PXFEM)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(FXBTAG)) THEN
+                SIZE_OLD = SIZE(FXBTAG)
+                IF (SIZE_OLD < NUMNOD) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='FXBTAG_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = FXBTAG(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, FXBTAG)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(ITAG)) THEN
+                SIZE_OLD = SIZE(ITAG)
+                IF (SIZE_OLD < NUMNOD) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='ITAG_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = ITAG(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, ITAG)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(NOD2SP)) THEN
+                SIZE_OLD = SIZE(NOD2SP)
+                IF (SIZE_OLD < NUMNOD) THEN
+                  SNOD2SP = NUMNOD
+                  ALLOCATE(IRESIZE_TMP(NUMNOD), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='NOD2SP_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = NOD2SP(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, NOD2SP)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(KNOD2ELS)) THEN
+                SIZE_OLD = SIZE(KNOD2ELS)
+                IF (SIZE_OLD < NUMNOD+1) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='KNOD2ELS_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = KNOD2ELS(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, KNOD2ELS)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(KNOD2ELC)) THEN
+                SIZE_OLD = SIZE(KNOD2ELC)
+                IF (SIZE_OLD < NUMNOD+1) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='KNOD2ELC_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = KNOD2ELC(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, KNOD2ELC)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(KNOD2ELTG)) THEN
+                SIZE_OLD = SIZE(KNOD2ELTG)
+                IF (SIZE_OLD < NUMNOD+1) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='KNOD2ELTG_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = KNOD2ELTG(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, KNOD2ELTG)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(KNOD2EL1D)) THEN
+                SIZE_OLD = SIZE(KNOD2EL1D)
+                IF (SIZE_OLD < NUMNOD+1) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='KNOD2EL1D_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = KNOD2EL1D(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, KNOD2EL1D)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(KNOD2ELQ)) THEN
+                SIZE_OLD = SIZE(KNOD2ELQ)
+                IF (SIZE_OLD < NUMNOD+1) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='KNOD2ELQ_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = KNOD2ELQ(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, KNOD2ELQ)
+                  ENDIF
+                ENDIF
+              ENDIF
+
+              IF (ALLOCATED(KNOD2ELIG3D)) THEN
+                SIZE_OLD = SIZE(KNOD2ELIG3D)
+                IF (SIZE_OLD < NUMNOD+1) THEN
+                  ALLOCATE(IRESIZE_TMP(NUMNOD+1), STAT=stat)
+                  IF(STAT /= 0) THEN
+                    CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                          MSGTYPE=MSGERROR, C1='KNOD2ELIG3D_TMP')
+                  ELSE
+                    IRESIZE_TMP(1:SIZE_OLD) = KNOD2ELIG3D(1:SIZE_OLD)
+                    IRESIZE_TMP(SIZE_OLD+1:NUMNOD+1) = 0
+                    CALL MOVE_ALLOC(IRESIZE_TMP, KNOD2ELIG3D)
+                  ENDIF
+                ENDIF
+              ENDIF
+!              
+            ENDIF  
+        ELSE
+          CALL SET_Q1NP_COUNTS(0,0,0,0,0,0,0,0)
+        ENDIF
       ENDIF
 
       NSEGS=NPART
@@ -9766,17 +9902,22 @@ C
 C-------------------------------------------------------
 C
       IF(IDDLEVEL == 0) THEN
-        IF(IREST_MSELT/=0)THEN
+C       MSSA(NUMELS): filled when IREST_MSELT/=0 (solid mass restart path).
+C       Q1NP_MASS3 writes MSSA(iel_hex8), iel_hex8 in 1..NUMELS, when NUMELQ1NP_G>0.
+        IF(IREST_MSELT/=0 .OR. NUMELQ1NP_G > 0)THEN
           ALLOCATE(MSSA(NUMELS)     ,STAT=stat)
           IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
      .                             MSGTYPE=MSGERROR,
      .                         C1='MSSA')
+        ELSE
+          ALLOCATE(MSSA(0)          ,STAT=stat)
+        ENDIF
+        IF(IREST_MSELT/=0)THEN
           ALLOCATE(MSRT(NUMELR)     ,STAT=stat)
           IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
      .                             MSGTYPE=MSGERROR,
      .                         C1='MSRT')
         ELSE
-          ALLOCATE(MSSA(0)          ,STAT=stat)
           ALLOCATE(MSRT(0)          ,STAT=stat)
         ENDIF
 C-------------------------------------------------------

@@ -36,16 +36,17 @@
       contains
 !
       !  INITIALIZE PER-GAUSS-POINT REFERENCE VOLUMES FOR Q1NP SOLID GROUPS
-        subroutine q1np_init_lbuf_gp_vol(iparg, elbuf_tab, x, numels, &
+        subroutine q1np_init_lbuf_gp_vol(iparg, elbuf_tab, x, numnod, numels, &
      &                                   kq1np_tab, iq1np_tab, &
      &                                   iq1np_bulk_tab)
 !-----------------------------------------------------------------------
           integer, intent(in) :: numels
+          integer, intent(in) :: numnod
           integer, intent(in) :: iparg(:,:)
-          integer, intent(in) :: kq1np_tab(:,:)
-          integer, intent(in) :: iq1np_tab(:)
-          integer, intent(in) :: iq1np_bulk_tab(:)
-          real(kind=WP), intent(in) :: x(:,:)
+          integer, intent(in) :: kq1np_tab(15,numelq1np_g)
+          integer, intent(in) :: iq1np_tab(siq1np_g)
+          integer, intent(in) :: iq1np_bulk_tab(sq1npbulk_g)
+          real(kind=WP), intent(in) :: x(3,numnod)
           type(ELBUF_STRUCT_), target, intent(inout) :: elbuf_tab(:)
 !-----------------------------------------------------------------------
 !     Local variables

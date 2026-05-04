@@ -1449,7 +1449,8 @@ C-----------------------------------------------
         print *, "Internal ID of the selected group of PRIMARY nodes 
      &           (for STS):", IPARI(46,1)
       END IF
-      
+
+      IF (NINTER > 0) THEN      
       IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
      .    IPARI(46,1) <= NSURF) THEN
           IF (DEBUG_SWITCH) THEN
@@ -1476,6 +1477,7 @@ C-----------------------------------------------
             print *, "STS interface not active or invalid primary surface ID"
           END IF
       ENDIF  
+      ENDIF
 
 C-----------------------------------------------
 C Process SECONDARY Surface (Slave Surface for STS)
@@ -1528,7 +1530,204 @@ C           Here we are building a Nodelist for the contact search algorithm.
             ! IPARI(45,1) is the internal id of the group of secondary nodes.
             IF (IPARI(13,1)/10 == 1 .AND. IPARI(45,1) > 0 .AND.
      &          IPARI(45,1) <= NSURF) THEN
-              CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, NODES%ITAB, 1, IPARI(45,1))
+              CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, 1, IPARI(45,1))
+              CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB, 1)
+            ENDIF
+          END IF
+        END IF
+      END IF
+      
+      IF (DEBUG_SWITCH) THEN
+        write(*,*)
+        write(*,*) "Unique SECONDARY NODES for the search algorithm"
+        write(*,*) INTERFACES%INTBUF_TAB(1)%NSV
+        write(*,*)
+      END IF
+      
+      !SurfaceIDs
+      I = 1
+      !CONTACT PARAMETERS
+      !DEBUGGING
+      if (DEBUG_SWITCH) THEN
+        write(*,*) "IPARI"
+        write(*,*) "IPARI(7)",  IPARI(7, 1), ": type of interface"
+        write(*,*) "IPARI(3)",  IPARI(3, 1), ": number of secondary nodes in input"
+        write(*,*) "IPARI(4)",  IPARI(4, 1), ": number of main segments in input"
+        write(*,*) "IPARI(15)", IPARI(15,1), ": user id of the interface"
+        write(*,*) "IPARI(21)", IPARI(21,1), ": Igap flag"
+        write(*,*) "IPARI(21)", IPARI(21,1), ": Inacti flag"
+        write(*,*) "IPARI(34)", IPARI(34,1), ": Istif flag"
+        write(*,*) "IPARI(45)", IPARI(45,1), ": Internal id of the group of secondary nodes"
+        write(*,*) "IPARI(46)", IPARI(46,1), ": Internal id of the main surface"
+        write(*,*) "---------------"
+        write(*,*) "INTERFACES%INTBUF_TAB"
+        write(*,*) "%IRECTS", INTERFACES%INTBUF_TAB(1)%IRECTS, ": list of secondary segment"
+        write(*,*) "%IRECTM", INTERFACES%INTBUF_TAB(1)%IRECTM, ": list of main segment"
+        write(*,*) "%NSV", INTERFACES%INTBUF_TAB(1)%NSV, ": list of secondary nodes"
+        write(*,*) "%MSR", INTERFACES%INTBUF_TAB(1)%MSR, ": number of secondary nodes"
+        write(*,*) "-----WILL BE CALCULATED------"
+        write(*,*) "%CAND_E", INTERFACES%INTBUF_TAB(1)%CAND_E, ": id of main segment of contact candidate"
+        write(*,*) "%CAND_N", INTERFACES%INTBUF_TAB(1)%CAND_N, ": id of secondary node of contact candidate"
+        write(*,*) "%CAND_P", INTERFACES%INTBUF_TAB(1)%CAND_P, ": initial penetration of contact candidate"
+        write(*,*) "%I_STOK", INTERFACES%INTBUF_TAB(1)%I_STOK, ": number of candidates"
+        write(*,*) "INTERFACES%INTBUF_TAB(1)%VARIABLES()", INTERFACES%INTBUF_TAB(1)%VARIABLES, ": input parameters"
+        !write(*,*) "INTERFACES%INTBUF_TAB(1)%S_VARIABLES", INTERFACES%INTBUF_TAB(1)%S_VARIABLES, ": size of %VARIABLES (current value is 48 in NPARIR defined in starter0.F)"
+        write(*,*) "%GAP_S", INTERFACES%INTBUF_TAB(1)%GAP_S, ": gap on secondary node"
+        write(*,*) "%GAP_M", INTERFACES%INTBUF_TAB(1)%GAP_M, ": gap on main segment"
+        write(*,*) "%GAP_ML", INTERFACES%INTBUF_TAB(1)%GAP_ML, ": Igap=3 - gap on main segment based on mesh size"
+        write(*,*) "%GAP_SL", INTERFACES%INTBUF_TAB(1)%GAP_SL, ": Igap=3 - gap of secondary node based on mesh size"
+        write(*,*) "%STFM", INTERFACES%INTBUF_TAB(1)%STFM, ": contact stiffness of main segment"
+        write(*,*) "%STFNS", INTERFACES%INTBUF_TAB(1)%STFNS, ": contact stiffness of secondary node"
+        write(*,*) "%XSAV", INTERFACES%INTBUF_TAB(1)%XSAV, ": position stored at last sorting"
+      endif
+      
+
+C-----------------------------------------------
+C STS (Segment-to-Segment) Contact Initialization
+C-----------------------------------------------
+      STS_ACTIVE = .TRUE.  ! Enable STS contact processing
+
+C-----------------------------------------------
+C Build NODE_MAT: Local ID, Global ID, and Coordinates
+C-----------------------------------------------
+      
+      do i = 1, NUMNOD
+        NODE_MAT(i, 1) = i                    ! Local Node ID
+        NODE_MAT(i, 2) = NODES%ITAB(i)        ! Global Node ID
+        NODE_MAT(i, 3:5) = NODES%X(1:3, i)    ! X, Y, Z coordinates
+      end do
+      
+      IF (DEBUG_SWITCH) THEN
+        write(*,*)
+        print *, 'NODE MATRIX:'
+        print '(T2, A, T11, A, T20, A, T28, A, T36, A)', 
+     &         'LocalID', 'GlobalID', 'X-Coord', 'Y-Coord', 'Z-Coord'
+        do i = 1, NUMNOD
+            print '(F8.0, F10.0, F8.2, F8.2, F8.2)', NODE_MAT(i, :)
+        end do
+      END IF
+
+C-----------------------------------------------
+C Build SOLID_ELEMENT_MAT: Element connectivity
+C-----------------------------------------------
+      
+      IF (DEBUG_SWITCH) THEN
+        print *, ''
+        print *, 'SOLID ELEMENT CONNECTIVITY:'
+        print '(T1, A, T15, A, T32, A, T71, A, T74, A, T82, A)', 
+     &         'ElemType', '<-', 'Nodes (LocalID)', '->', 'prop_ID', 
+     &         'ElementID'
+      END IF
+      do i = 1, NUMELS
+          SOLID_ELEMENT_MAT(i, :) = IXS((i - 1) * 11 + 1 : i * 11)
+          IF (DEBUG_SWITCH) THEN
+            print '(F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, F8.0, 
+     &            F8.0, F8.0, F10.0)', SOLID_ELEMENT_MAT(i, :)
+          END IF
+      end do    
+
+C-----------------------------------------------
+C Interface Type and Secondary Nodes Information
+C-----------------------------------------------
+      IF (DEBUG_SWITCH) THEN
+        write(*,*) 
+        write(*,*) "Type of interface:", IPARI(7,1)     
+        
+        print *, ''
+        print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
+        DO I = 1, NINTER
+            print *, INTERFACES%INTBUF_TAB(I)%NSV
+        ENDDO
+      END IF
+
+C-----------------------------------------------
+C Process PRIMARY Surface (Master Surface for STS)
+C-----------------------------------------------
+      IF (DEBUG_SWITCH) THEN
+        write(*,*)
+        print *, "Internal ID of the selected group of PRIMARY nodes 
+     &           (for STS):", IPARI(46,1)
+      END IF
+      
+      IF (IPARI(7,1) /= 0 .AND. IPARI(46,1) > 0 .AND. 
+     .    IPARI(46,1) <= NSURF) THEN
+          IF (DEBUG_SWITCH) THEN
+            print '(A, 1X, A15)', 'Title:', IGRSURF(IPARI(46,1))%TITLE
+            print '(A, 1X, I4)', 'Number of Segments:', 
+     &            IGRSURF(IPARI(46,1))%NSEG
+          END IF
+
+          
+          IF (DEBUG_SWITCH) THEN
+            print *, "PRIMARY NODES (LocalID):"
+            print '(T1, A, T15, A, T20, A, T39, A)', 
+     &            'LocalElID', '<-', 'Nodes (LocalID)', '->'
+          END IF
+          do i = 1, IGRSURF(IPARI(46,1))%NSEG
+              PRIMARY_SEG_MAT(i, 1) = i  ! Segment local ID
+              PRIMARY_SEG_MAT(i, 2:5) = IGRSURF(IPARI(46,1))%NODES(i, 1:4)
+              IF (DEBUG_SWITCH) THEN
+                print '(F8.0, F8.0, F8.0, F8.0, F8.0)', PRIMARY_SEG_MAT(i, :)
+              END IF
+          end do
+      ELSE
+          IF (DEBUG_SWITCH) THEN
+            print *, "STS interface not active or invalid primary surface ID"
+          END IF
+      ENDIF  
+
+C-----------------------------------------------
+C Process SECONDARY Surface (Slave Surface for STS)
+C-----------------------------------------------
+      IF (DEBUG_SWITCH) THEN
+        print *, ''
+        print *, 'ORIGINAL SECONDARY NODES IDS (local) DEFINED FOR NTS:'
+        DO I = 1, NINTER
+            print *, INTERFACES%INTBUF_TAB(I)%NSV
+        ENDDO
+
+        write(*,*)
+        print *, "Internal ID of the selected group of SECONDARY nodes:", 1
+      END IF
+      
+      IF (NSURF >= 1 .AND. IGRSURF(1)%NSEG > 0) THEN
+          IF (DEBUG_SWITCH) THEN
+            print '(A, 1X, A15)', 'Title:', IGRSURF(1)%TITLE
+            print '(A, 1X, I4)', 'Number of Segments:', IGRSURF(1)%NSEG
+          END IF
+         
+
+          IF (DEBUG_SWITCH) THEN
+            print *, "SECONDARY NODES (LocalID):"
+            print '(T1, A, T15, A, T20, A, T39, A)', 
+     &            'LocalElID', '<-', 'Nodes (LocalID)', '->'
+          END IF
+          do i = 1, IGRSURF(1)%NSEG
+              SECONDARY_SEG_MAT(i, 1) = i  ! Segment local ID
+              SECONDARY_SEG_MAT(i, 2:5) = IGRSURF(1)%NODES(i, 1:4)
+              IF (DEBUG_SWITCH) THEN
+                print '(F8.0, F8.0, F8.0, F8.0, F8.0)', SECONDARY_SEG_MAT(i, :)
+              END IF
+          end do
+      ELSE
+          IF (DEBUG_SWITCH) THEN
+            print *, "Secondary surface (ID=1) not available or has no segments"
+          END IF
+      ENDIF   
+                          
+C-----------------------------------------------
+C Initialize STS Contact: Create IRECTS and Remove Duplicates
+C-----------------------------------------------
+      IF (STS_ACTIVE) THEN
+        IF (ALLOCATED(INTERFACES%INTBUF_TAB)) THEN
+          IF (SIZE(INTERFACES%INTBUF_TAB) > 0) THEN
+C           Here we are building a Nodelist for the contact search algorithm.
+            ! TODO: TREAT FOR MULTIPLE INTERFACES; Currently only NIN=1 interface is treated.
+            ! TODO: This can be optimized in futur by clean input declaration of the interface and using the interface number.
+            ! IPARI(45,1) is the internal id of the group of secondary nodes.
+            IF (IPARI(13,1)/10 == 1 .AND. IPARI(45,1) > 0 .AND.
+     &          IPARI(45,1) <= NSURF) THEN
+              CALL CREATE_IRECTS_TEMP(INTERFACES%INTBUF_TAB, IGRSURF, 1, IPARI(45,1))
               CALL REMOVE_DUPLI(INTERFACES%INTBUF_TAB, 1)
             ENDIF
           END IF
@@ -9247,7 +9446,7 @@ C  IOUTPRT for assembly synthesis, not need for spring which call *bilan each cy
               CALL TH_TIME_OUTPUT(ITHOUT, SENSORS,OUTPUT)
               IF(ISPMD == 0 .AND. NUMELQ1NP_G > 0 .AND.
      .           Q1NP_NKNOT_SETS_G >= 2 .AND. ALLOCATED(KQ1NP_TAB)) THEN
-                CALL Q1NP_CONTACT_EXPORT_FLUSH(TT, NCYCLE, KQ1NP_TAB)
+                CALL Q1NP_CONTACT_EXPORT_FLUSH(TT, KQ1NP_TAB)
               ENDIF
 
                 IF(ITHOUT > 0) THEN

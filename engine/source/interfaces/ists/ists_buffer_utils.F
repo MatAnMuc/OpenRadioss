@@ -123,7 +123,7 @@ C   that will be used for contact detection. The 2D array IGRSURF(1)%NODES
 C   (segments × nodes) is flattened into a 1D array INTBUF_TAB(1)%IRECTS.
 C
 C
-      SUBROUTINE CREATE_IRECTS_TEMP(INTBUF_TAB,IGRSURF,ITAB,NIN,ISURF)
+      SUBROUTINE CREATE_IRECTS_TEMP(INTBUF_TAB,IGRSURF,NIN,ISURF)
 C-----------------------------------------------
 C   M o d u l e s
 C----------------------------------------------- 
@@ -143,7 +143,6 @@ C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
       TYPE(INTBUF_STRUCT_) INTBUF_TAB(*)
       TYPE (SURF_)   , DIMENSION(NSURF)   :: IGRSURF
-      INTEGER ITAB(*)
       INTEGER NIN, ISURF
       ! ISURF is the internal id of the group of secondary nodes.
 C-----------------------------------------------

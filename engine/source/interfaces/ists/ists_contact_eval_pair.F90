@@ -13,12 +13,9 @@
 !||    sts_shape               ../engine/source/interfaces/ists/ists_shape_fct.F90
 !||====================================================================
       subroutine STS_CONTACT_EVAL_PAIR(XUPD, STIF, p, IMPACT, EL_NR, node_stiff, OPTION, &
-     &                   V, MS, FRICC, FRIC_COEFS, VISCFFRIC, XMU, MFROT, &
-     &                   IFQ, ALPHA0, CAND_F, IFPEN, STIF0, &
-     &                   p_friction, EFRICT, QFRICT, INTTH, node_ids, &
-     &                   CALC_FRICTION, XI1_HIST, XI2_HIST, &
-     &                   TTRIAL1_HIST, TTRIAL2_HIST, MAX_STS_SIZE, NUMNOD, GAP, &
-     &                   CAND_SEC_SEG_ID, MAX_PENETRATION_OUT)
+      &                   FRICC, XMU, IFPEN, &
+      &                   p_friction, EFRICT, QFRICT, node_ids, &
+      &                   CALC_FRICTION, MAX_STS_SIZE, GAP)
 !-----------------------------------------------
 !   M o d u l e s   /   I m p l i c i t   T y p e s
 !-----------------------------------------------
@@ -42,46 +39,28 @@
 !     EL_NR    : Temporary Element number (for debugging)
 !     node_stiff: Output nodal stiffness values (8 components)
 !     OPTION   : 0 = Gauss quadrature, 1 = Lobatto quadrature
-!     V        : Nodal velocities (3,:)
-!     MS       : Nodal masses (:)
-!     FRICC, FRIC_COEFS, VISCFFRIC, XMU: Friction parameters
-!     MFROT    : Friction model type
-!     IFQ      : Friction formulation flag
-!     ALPHA0   : Friction parameter
-!     CAND_F   : Stored friction forces (for incremental formulation)
+!     FRICC, XMU: Friction parameters
 !     IFPEN    : Penetration flag array
-!     STIF0    : Tangential contact stiffness
 !     p_friction: Output friction forces (24 components) - separate output
 !     EFRICT   : Friction energy (output)
 !     QFRICT   : Total friction energy (INTENT(INOUT))
-!     INTTH    : Thermal interface flag
 !     node_ids : Node IDs for velocity interpolation (8 components)
 !     CALC_FRICTION: Flag to enable/disable friction calculation
-!     XI1_HIST : History of xi1 parametric coordinates per Gauss point
-!     XI2_HIST : History of xi2 parametric coordinates per Gauss point
 !     MAX_STS_SIZE: Maximum size for history arrays
 !     GAPV: Gap value from user input
 !-----------------------------------------------
-      INTEGER IMPACT, OPTION, EL_NR, MFROT, IFQ, INTTH
-      INTEGER MAX_STS_SIZE, NUMNOD  ! Maximum size for history arrays / number of nodes
+      INTEGER IMPACT, OPTION, EL_NR
       INTEGER node_ids(8)
       LOGICAL CALC_FRICTION
-      my_real STIF(MVSIZ), STIF0(MVSIZ)
+      my_real STIF(MVSIZ)
       real*8  p(24), p_friction(24)
       real*8  XUPD(3,8)
       real*8  node_stiff(8)
-      my_real V(3,NUMNOD), MS(NUMNOD)
-      my_real CAND_F(8,MAX_STS_SIZE)
+      my_real FRICC(MVSIZ), XMU(MVSIZ)
       INTEGER IFPEN(MAX_STS_SIZE)
-      my_real FRICC(MVSIZ), FRIC_COEFS(MVSIZ,10), VISCFFRIC(MVSIZ)
-      my_real XMU(MVSIZ), ALPHA0
       my_real EFRICT, QFRICT
-      REAL*8 XI1_HIST(MAX_STS_SIZE,2,2)  ! History of xi1 per Gauss point
-      REAL*8 XI2_HIST(MAX_STS_SIZE,2,2)  ! History of xi2 per Gauss point
-      REAL*8 TTRIAL1_HIST(MAX_STS_SIZE,2,2)  ! History of T_trial(1) per Gauss point
-      REAL*8 TTRIAL2_HIST(MAX_STS_SIZE,2,2)  ! History of T_trial(2) per Gauss poin
+      INTEGER MAX_STS_SIZE  ! Maximum size for history arrays
       my_real GAP  ! Gap value from user input
-      INTEGER CAND_SEC_SEG_ID(MAX_STS_SIZE,5)
       REAL*8 MAX_PENETRATION_OUT
 !     interface to global gp index function
       INTEGER GET_GLOBAL_GP_INDEX
@@ -89,6 +68,7 @@
 !   L o c a l   V a r i a b l e s
 !-----------------------------------------------
       INTEGER i, j, z, q, ip
+      INTEGER pair_fric_idx
       real*8  xi1, xi2
       real*8  penetr, PENE, GAPV, FAC
       my_real d1
@@ -96,11 +76,16 @@
       real*8  daeta1(3,24), daeta2(3,24)
       real*8  rhoxi1(3), rhoxi2(3)
       real*8  m_ij(2,2), detm, mij(2,2), detmPrimary
-      real*8  norm(3)
+      real*8  norm_contact(3), norm_gauss(3)
       real*8  pm(24), pm_friction(24)
       real*8  eta1(10), eta2(10), wi1(10), wi2(10)
       real*8  energy
+      real*8  active_area, area_weight
+      real*8  stiff_accum, gap_distance, signed_distance
+      real*8  fac_min, fac_max, pair_force_mag
       real*8  N_xi(3,4), N_eta(3,4)
+      real*8  norm_secondary(3), sec_t1(3), sec_t2(3)
+      real*8  sec_norm_len, normal_dot
       real*8  VX, VY, VZ, FTN
       real*8  FXT, FYT, FZT, PHI, FN
       INTEGER INDEX_CAND
@@ -129,12 +114,18 @@
       real*8  rhoxi1_fric(3), rhoxi2_fric(3)
       real*8  wi1_fric, wi2_fric, eta1_fric, eta2_fric
       logical use_gauss_for_friction
+      real*8, parameter :: STS_PENALTY_FAC_MAX = 20.0d0
+      real*8, parameter :: STS_PENALTY_SCALE = 1000.0d0
+      logical, parameter :: STS_DEBUG_PENALTY = .FALSE.
 !-----------------------------------------------
 !   I n i t i a l i z a t i o n
 !-----------------------------------------------
       IMPACT = 0
       MAX_PENETRATION_OUT = 0.0D0
       ip = 2 ! Quadrature order
+      pair_fric_idx = MIN(MAX(EL_NR, 1), MVSIZ)
+      fac_min = 1.0d30
+      fac_max = 0.0d0
       
       ! Calculate maximum global GP index for bounds checking
       MAX_GLOBAL_GP_LOCAL = MAX_STS_SIZE * ip * ip
@@ -167,7 +158,10 @@
       GAPV = GAP ! Use user-defined Gapmin value
       energy = 0.0d0
       EFRICT = 0.d0
-      XMU(1) = FRICC(1) ! Friction coefficient mu
+      XMU(1) = FRICC(pair_fric_idx) ! Friction coefficient mu
+      active_area = 0.0d0
+      stiff_accum = 0.0d0
+      node_stiff = 0.0d0
 !-----------------------------------------------
 !   M a i n   C o m p u t a t i o n
 !-----------------------------------------------
@@ -188,9 +182,10 @@
      &               eta1(z), eta2(q))
           
           ! Calculate surface geometry and metrics
-          call sts_surfgeom(XUPD, daxi1, daxi2, daeta1, daeta2, norm, &
+          call sts_surfgeom(XUPD, daxi1, daxi2, daeta1, daeta2, norm_contact, &
      &                    rhoxi1, rhoxi2, m_ij, detm, mij, detmPrimary)
-          
+          area_weight = wi1(z) * wi2(q) * dsqrt(detm)
+
           ! ==== GAUSS PROJECTION FOR FRICTION ====
           IF (OPTION == 0) THEN
             ! Gauss algorithm: current projection IS Gauss projection
@@ -236,15 +231,49 @@
               
               call sts_surfgeom(XUPD, daxi1_gauss, daxi2_gauss, &
      &                        daeta1_gauss, daeta2_gauss, &
-     &                        norm, rhoxi1_gauss, rhoxi2_gauss, &
+     &                        norm_gauss, rhoxi1_gauss, rhoxi2_gauss, &
      &                        m_ij_gauss, detm_gauss, mij, detmPrimary)
             ENDIF
           ENDIF
-          
+
           ! ==== Normal impact =====
-          ! Compute penetration at Gauss point
-          call sts_penetr(XUPD, penetr, norm, a)
-          
+          ! Orient the primary normal against the secondary surface
+          call sts_shape(eta1(z), eta2(q), N_eta)
+          DO i=1,3
+            sec_t1(i) = 0.0d0
+            sec_t2(i) = 0.0d0
+            DO j=1,4
+              sec_t1(i) = sec_t1(i) + N_eta(2,j) * XUPD(i,j+4)
+              sec_t2(i) = sec_t2(i) + N_eta(3,j) * XUPD(i,j+4)
+            ENDDO
+          ENDDO
+          norm_secondary(1) = sec_t1(2)*sec_t2(3) &
+     &                      - sec_t1(3)*sec_t2(2)
+          norm_secondary(2) = sec_t1(3)*sec_t2(1) &
+     &                      - sec_t1(1)*sec_t2(3)
+          norm_secondary(3) = sec_t1(1)*sec_t2(2) &
+     &                      - sec_t1(2)*sec_t2(1)
+          sec_norm_len = DSQRT(norm_secondary(1)*norm_secondary(1) &
+     &                      + norm_secondary(2)*norm_secondary(2) &
+     &                      + norm_secondary(3)*norm_secondary(3))
+          IF (sec_norm_len .GT. 1.0d-30) THEN
+            DO i=1,3
+              norm_secondary(i) = norm_secondary(i) / sec_norm_len
+            ENDDO
+            normal_dot = norm_contact(1)*norm_secondary(1) &
+     &                 + norm_contact(2)*norm_secondary(2) &
+     &                 + norm_contact(3)*norm_secondary(3)
+            IF (normal_dot .GT. 0.0d0) THEN
+              DO i=1,3
+                norm_contact(i) = -norm_contact(i)
+              ENDDO
+            ENDIF
+          ENDIF
+
+          ! Compute signed clearance to the primary projection.
+          call sts_penetr(XUPD, signed_distance, norm_contact, a)
+          penetr = signed_distance
+
           ! Check for penetration
           PENE = penetr - GAPV
           
@@ -256,29 +285,37 @@
           ! Penetration detected
           IMPACT = 1
           penetr = PENE
+          active_area = active_area + area_weight
           MAX_PENETRATION_OUT = MAX(MAX_PENETRATION_OUT, DABS(PENE))
           
-          ! Calculate penalty parameter
-          d1 = STIF(1) * 1.0d0
-          FAC = GAPV / MAX(EM10, (GAPV+PENE))
-          d1 = 0.5d0 * d1 * FAC
-          
+          ! Calculate penalty parameter. 
+          d1 = STIF(1)
+          IF (DABS(GAPV) .GT. EM10) THEN
+            gap_distance = GAPV + PENE
+            FAC = DABS(GAPV) / MAX(EM10, gap_distance)
+            FAC = MIN(FAC, STS_PENALTY_FAC_MAX)
+          ELSE
+            FAC = 1.0d0
+          ENDIF
+          d1 = 0.5d0 * d1 * FAC * STS_PENALTY_SCALE
+          fac_min = MIN(fac_min, FAC)
+          fac_max = MAX(fac_max, FAC)
+          stiff_accum = stiff_accum + d1 * area_weight
+
           ! Extract nodal stiffness and set penetration flag if penetration detected
           IF (IMPACT == 1) THEN
-            node_stiff = d1 ! TODO: Review
             INDEX_CAND = EL_NR ! INDEX_CAND
             IFPEN(INDEX_CAND) = 1  ! Penetration flag (1 = penetrated, 0 = not penetrated)
           ENDIF      
           
           ! Accumulate energy
-          energy = energy + 0.5d0 * d1 * penetr**2 * wi1(z) * wi2(q) * &
-     &            dsqrt(detm)
-          
+          energy = energy + 0.5d0 * d1 * penetr**2 * area_weight
+
           ! Compute residual forces (normal component)
           DO i=1,24
             DO j=1,3
               pm(i) = pm(i) + d1 * penetr * &
-     &                a(j,i) * norm(j) * wi1(z) * wi2(q) * dsqrt(detm)
+     &                a(j,i) * norm_contact(j) * area_weight
             ENDDO
           ENDDO
           !XMU(1) = 0.6
@@ -443,10 +480,12 @@
             ! Calculate tangential velocity from relative velocity
             ! Project V_rel onto tangent plane
             ! TODO: Review this energy calculation
-            !FTN = V_rel(1)*norm(1) + V_rel(2)*norm(2) + V_rel(3)*norm(3)
-            !VX = V_rel(1) - FTN*norm(1)
-            !VY = V_rel(2) - FTN*norm(2)
-            !VZ = V_rel(3) - FTN*norm(3)
+            !FTN = V_rel(1)*norm_contact(1) +
+            !&    V_rel(2)*norm_contact(2) +
+            !&    V_rel(3)*norm_contact(3)
+            !VX = V_rel(1) - FTN*norm_contact(1)
+            !VY = V_rel(2) - FTN*norm_contact(2)
+            !VZ = V_rel(3) - FTN*norm_contact(3)
             !EFRICT = EFRICT + DT1 * (VX*FXT + VY*FYT + VZ*FZT) * 
             !&              wi1(z) * wi2(q) * dsqrt(detm)
       ENDIF
@@ -457,6 +496,23 @@
 !-----------------------------------------------
 !   F i n a l   R e s u l t s
 !-----------------------------------------------
+      IF (active_area .GT. 1.0d-30) THEN
+        DO i=1,24
+          pm(i) = pm(i) / active_area
+          pm_friction(i) = pm_friction(i) / active_area
+        ENDDO
+        node_stiff = stiff_accum / active_area
+        energy = energy / active_area
+      ENDIF
+
+      IF (STS_DEBUG_PENALTY .AND. IMPACT == 1) THEN
+        pair_force_mag = DSQRT(p(1)**2 + p(2)**2 + p(3)**2)
+        WRITE(6,*) 'STS penalty diag: pair=', EL_NR, ', opt=', OPTION, &
+     &             ', STIF1=', STIF(1), ', pen=', MAX_PENETRATION_OUT, &
+     &             ', fac[min,max]=', fac_min, fac_max, &
+     &             ', k=', node_stiff(1), ', scale=', STS_PENALTY_SCALE
+      ENDIF
+
       ! Set output forces
       ! Combine normal and friction forces
       DO i=1,24

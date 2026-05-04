@@ -123,9 +123,8 @@
 !=======================================================================
 !   Append one TH-synchronized CSV snapshot.
 !=======================================================================
-        SUBROUTINE Q1NP_CONTACT_EXPORT_FLUSH(TIME_CUR, NCYCLE, KQ1NP_TAB)
+        SUBROUTINE Q1NP_CONTACT_EXPORT_FLUSH(TIME_CUR, KQ1NP_TAB)
           REAL(KIND=WP), INTENT(IN) :: TIME_CUR
-          INTEGER, INTENT(IN) :: NCYCLE
           INTEGER, INTENT(IN) :: KQ1NP_TAB(:,:)
 
           INTEGER :: IEL, LUX, NUMELQ1NP, CYCLE_TO_WRITE

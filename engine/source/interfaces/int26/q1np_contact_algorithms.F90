@@ -133,7 +133,7 @@
 !=======================================================================
         SUBROUTINE Q1NP_CONTACT_BROAD_PHASE_CHECK_PROXIMITY( &
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, X_COORDS, NUMNOD, &
-     &      NUMELQ1NP, TT, GAP, A, STIFN, PROXIMITY_DETECTED)
+     &      NUMELQ1NP, GAP, A, STIFN, PROXIMITY_DETECTED)
 !C----------------------------------------------------------------------
 !C   D u m m y   A r g u m e n t s
 !C----------------------------------------------------------------------
@@ -141,7 +141,6 @@
           INTEGER, INTENT(IN) :: IQ1NP_TAB(:)
           REAL(KIND=WP), INTENT(IN) :: Q1NP_KTAB(:)
           INTEGER, INTENT(IN) :: NUMNOD, NUMELQ1NP
-          REAL(KIND=WP), INTENT(IN) :: TT
           REAL(KIND=WP), INTENT(IN) :: GAP
           REAL(KIND=WP), INTENT(IN) :: X_COORDS(3,NUMNOD)
           REAL(KIND=WP), INTENT(INOUT) :: A(3,NUMNOD)
@@ -195,7 +194,7 @@
      &        Q1NP_CONTACT_BROAD_PHASE_NGP_SURF_U,            &
      &        Q1NP_CONTACT_BROAD_PHASE_NGP_SURF_V,            &
      &        SURF_POINTS_A, NPTS_A,                           &
-     &        ELEM_IDS_A, XI_A, ETA_A)
+     &        ELEM_IDS_A, XI_A, ETA_A, MAX_PTS)
           ! Build point cloud for surface B
           CALL Q1NP_CONTACT_BROAD_PHASE_BUILD_SURFACE_POINTS( &
      &        KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, NUMELQ1NP,    &
@@ -203,7 +202,7 @@
      &        Q1NP_CONTACT_BROAD_PHASE_NGP_SURF_U,            &
      &        Q1NP_CONTACT_BROAD_PHASE_NGP_SURF_V,            &
      &        SURF_POINTS_B, NPTS_B,                           &
-     &        ELEM_IDS_B, XI_B, ETA_B)
+     &        ELEM_IDS_B, XI_B, ETA_B, MAX_PTS)
 
           ALLOCATE(PAIRS(MAX(1, NPTS_B)))
           ALLOCATE(CANDIDATE_IA(Q1NP_CONTACT_MAX_CANDIDATES_PER_B, MAX(1, NPTS_B)))
@@ -249,7 +248,7 @@
             CALL Q1NP_CONTACT_COMPUTE_PENALTY_FORCES( &
      &          PAIRS, N_PAIRS, &
      &          KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, &
-     &          X_COORDS, NUMNOD, GAP_CONTACT, A, STIFN)
+     &          NUMNOD, GAP_CONTACT, A, STIFN)
           END IF
 !   ----------------------------------------------------------------------------------------------------------------------
 !                                                ADAPTIVE SKIP SCHEDULING
@@ -289,7 +288,7 @@
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, NUMELQ1NP,         &
      &      X_COORDS, NUMNOD, KNOT_SET_ID_FILTER,                 &
      &      NGP_SURF_U, NGP_SURF_V, SURF_POINTS, NPTS_TOTAL,     &
-     &      PT_ELEM_IDS, PT_XI, PT_ETA)
+     &      PT_ELEM_IDS, PT_XI, PT_ETA, MAX_PTS)
 !C----------------------------------------------------------------------
 !C   D u m m y   A r g u m e n t s
 !C----------------------------------------------------------------------
@@ -301,12 +300,13 @@
 !C----------------------------------------------------------------------
           INTEGER, INTENT(IN) :: KQ1NP_TAB(:,:)
           INTEGER, INTENT(IN) :: IQ1NP_TAB(:)
+          INTEGER, INTENT(IN) :: MAX_PTS
           REAL(KIND=WP), INTENT(IN) :: Q1NP_KTAB(:)
           INTEGER, INTENT(IN) :: NUMELQ1NP, NUMNOD
           INTEGER, INTENT(IN) :: KNOT_SET_ID_FILTER
           INTEGER, INTENT(IN) :: NGP_SURF_U, NGP_SURF_V
           REAL(KIND=WP), INTENT(IN)  :: X_COORDS(3,NUMNOD)
-          REAL(KIND=WP), INTENT(OUT) :: SURF_POINTS(3,NPTS_TOTAL)
+          REAL(KIND=WP), INTENT(OUT) :: SURF_POINTS(3,MAX_PTS)
           INTEGER, INTENT(OUT) :: NPTS_TOTAL
           INTEGER, INTENT(OUT), OPTIONAL :: PT_ELEM_IDS(:)
           REAL(KIND=WP), INTENT(OUT), OPTIONAL :: PT_XI(:), PT_ETA(:)
@@ -842,13 +842,12 @@
         SUBROUTINE Q1NP_CONTACT_COMPUTE_PENALTY_FORCES( &
      &      CONTACT_PAIRS, N_PAIRS, &
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, &
-     &      X_COORDS, NUMNOD, GAP_CONTACT, A, STIFN)
+     &      NUMNOD, GAP_CONTACT, A, STIFN)
           TYPE(Q1NP_CONTACT_PAIR), INTENT(IN) :: CONTACT_PAIRS(:)
           INTEGER, INTENT(IN) :: N_PAIRS
           INTEGER, INTENT(IN) :: KQ1NP_TAB(:,:)
           INTEGER, INTENT(IN) :: IQ1NP_TAB(:)
           REAL(KIND=WP), INTENT(IN)    :: Q1NP_KTAB(:)
-          REAL(KIND=WP), INTENT(IN)    :: X_COORDS(3,NUMNOD)
           INTEGER, INTENT(IN)          :: NUMNOD
           REAL(KIND=WP), INTENT(IN)    :: GAP_CONTACT
           REAL(KIND=WP), INTENT(INOUT) :: A(3,NUMNOD)
@@ -864,7 +863,7 @@
           REAL(KIND=WP), ALLOCATABLE :: U_KNOT_LOCAL(:), V_KNOT_LOCAL(:)
           REAL(KIND=WP), ALLOCATABLE :: STIFN_BASE(:)
           REAL(KIND=WP) :: NVAL_A(MAX_CTRL), NVAL_B(MAX_CTRL)
-          REAL(KIND=WP) :: F_PEN(3), F_MAG
+          REAL(KIND=WP) :: F_PEN(3), F_NEG(3), F_MAG
           REAL(KIND=WP) :: F_MAX, PENETR_MAX
           REAL(KIND=WP) :: PEN_ABS, PEN_EFF, FAC, D1
           REAL(KIND=WP) :: K_A, K_B, K_PAIR, GAP_REF
@@ -968,8 +967,9 @@
             IF (F_MAG > F_MAX) F_MAX = F_MAG
             IF (PEN_ABS > PENETR_MAX) PENETR_MAX = PEN_ABS
 
+            F_NEG(1:3) = (-ONE) * F_PEN(1:3)
             CALL Q1NP_CONTACT_EXPORT_ACCUMULATE( &
-     &          CONTACT_PAIRS(IP)%ELEM_A, -F_PEN, PEN_ABS)
+     &          CONTACT_PAIRS(IP)%ELEM_A, F_NEG, PEN_ABS)
             CALL Q1NP_CONTACT_EXPORT_ACCUMULATE( &
      &          CONTACT_PAIRS(IP)%ELEM_B,  F_PEN, PEN_ABS)
 

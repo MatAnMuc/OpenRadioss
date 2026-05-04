@@ -42,9 +42,9 @@
 !   Q1NP_CONTACT_DRIVER_INT7
 !   INT7 entry: runs broad+narrow+penalty at most once per NCYCLE.
 !=======================================================================
-        SUBROUTINE Q1NP_CONTACT_DRIVER_INT7(NCYCLE, NUMNOD, X, A, STIFN, TT, GAP)
+        SUBROUTINE Q1NP_CONTACT_DRIVER_INT7(NCYCLE, NUMNOD, X, A, STIFN, GAP)
           INTEGER, INTENT(IN) :: NCYCLE, NUMNOD
-          REAL(KIND=WP), INTENT(IN) :: X(3,NUMNOD), TT
+          REAL(KIND=WP), INTENT(IN) :: X(3,NUMNOD)
           REAL(KIND=WP), INTENT(IN) :: GAP
           REAL(KIND=WP), INTENT(INOUT) :: A(3,NUMNOD), STIFN(NUMNOD)
           LOGICAL :: HIT
@@ -60,7 +60,7 @@
 
           CALL Q1NP_CONTACT_BROAD_PHASE_CHECK_PROXIMITY( &
      &      KQ1NP_TAB, IQ1NP_TAB, Q1NP_KTAB, &
-     &      X, NUMNOD, NUMELQ1NP_G, TT, GAP, A, STIFN, HIT)
+     &      X, NUMNOD, NUMELQ1NP_G, GAP, A, STIFN, HIT)
           Q1NP_CONTACT_INT7_ALREADY = .TRUE.
         END SUBROUTINE Q1NP_CONTACT_DRIVER_INT7
 
