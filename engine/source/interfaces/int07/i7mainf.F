@@ -104,6 +104,8 @@ C-----------------------------------------------
       USE I18FOR3_MOD , ONLY : I18FOR3
       USE sts_gp_state_mod
       USE Q1NP_CONTACT_DRIVER_MOD, ONLY: Q1NP_CONTACT_DATA_READY, Q1NP_CONTACT_DRIVER_INT7
+      USE STS_VOXEL_DRIVER_MOD, ONLY: STS_VOXEL_DRIVER_DATA_READY
+      USE STS_BROAD_PHASE_VOXEL_MOD, ONLY: STS_VOXEL_BROAD_PHASE
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -169,7 +171,6 @@ C-----------------------------------------------
       my_real, DIMENSION(:,:,:), ALLOCATABLE :: load_arr     !load array
       INTEGER, DIMENSION(:,:),     ALLOCATABLE :: CAND_SEC_SEG_ID   !secondary segment nodes
       INTEGER, DIMENSION(:,:),     ALLOCATABLE :: CAND_MST_SEG_ID   !primary segment nodes
-      INTEGER, DIMENSION(:),       ALLOCATABLE :: CAND_SEC_SEG      !secondary segment nodes
       INTEGER, DIMENSION(:),       ALLOCATABLE :: node_id_load      !node id array (8 nodes per element)
       INTEGER COUNT !count for the number of contact elements found
       INTEGER ASS_FLAG !Assembly flag, 0 if old Assembly, 1 if new assembly algorithm called
@@ -217,7 +218,8 @@ C-----------------------------------------------
      .        IELECI(MVSIZ), NSMS(MVSIZ), IPARTFRICSI(MVSIZ),
      .        IPARTFRICMI(MVSIZ),INDEXISOT(MVSIZ),INDEXORTH(MVSIZ),
      .        IREP_FRICMI(MVSIZ)
-      my_real STARTT, FRIC, GAP, STOPT,VISC,VISCF,STIGLO,GAPMIN, KMIN, KMAX, GAPMAX,RSTIF,FHEATS,FHEATM,TINT,DTMINI
+      my_real STARTT, FRIC, GAP, STOPT,VISC,VISCF,STIGLO,GAPMIN, KMIN, KMAX, GAPMAX,
+     .        GAP_FOR_STS,RSTIF,FHEATS,FHEATM,TINT,DTMINI
 C-----------------------------------------------
       my_real NX1(MVSIZ), NX2(MVSIZ), NX3(MVSIZ), NX4(MVSIZ),
      .        NY1(MVSIZ), NY2(MVSIZ), NY3(MVSIZ), NY4(MVSIZ),
@@ -270,7 +272,12 @@ C-----------------------------------------------
       LOGICAL TYPE18
       INTEGER :: IDIR
       INTEGER :: SEC_SURF_ID_STS
-      LOGICAL, SAVE :: INT7_CONTACT_MODE_MSG_DONE = .FALSE. ! flag to check if the contact mode message has been printed (initialization of the contact algorithm)
+      INTEGER :: MST_SURF_ID_STS
+!     STS workflow uses fixed /SURF user IDs (100 secondary, 200 master).
+!     The STS_VOXEL_DRIVER_MOD owns readiness checks and one-time hints when
+!     those surfaces are missing or empty; otherwise the engine stops (MSG 324).
+      LOGICAL :: STS_VOXEL_OVERFLOW                       ! voxel broad-phase overflow flag
+      LOGICAL, SAVE :: INT7_CONTACT_MODE_MSG_DONE = .FALSE. ! one-time flag for the contact-mode banner
 C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------
@@ -321,6 +328,10 @@ C-----------------------------------------------
         IF (ABS(TT) <= 1.0E-20 .OR. NCYCLE <= 0) THEN
           IF (Q1NP_CONTACT_DATA_READY()) THEN
             WRITE(6,*) 'INT7 (NIN=', NIN, '): contact mode = Q1NP (NURBS)'
+          ELSE IF (STS_ACTIVE .AND.
+     &             STS_VOXEL_DRIVER_DATA_READY(IGRSURF, NSURF, NOINT,
+     &                .FALSE., SEC_SURF_ID_STS, MST_SURF_ID_STS)) THEN
+            WRITE(6,*) 'INT7 (NIN=', NIN, '): contact mode = STS (voxel broad-phase)'
           ELSE IF (STS_ACTIVE) THEN
             WRITE(6,*) 'INT7 (NIN=', NIN, '): contact mode = STS (segment-to-segment)'
           ELSE
@@ -353,6 +364,8 @@ C-----------------------------------------------
       IF(INTTH > 0) IFRIC =IPARI(50,NIN)
       XFRIC  = INTBUF_TAB%VARIABLES(34)
       GAPMAX = INTBUF_TAB%VARIABLES(16)
+C     Scalar gap consistent with I7COR3:
+      GAP_FOR_STS = MIN(GAPMAX, MAX(GAPMIN, GAP))
       KMIN   = INTBUF_TAB%VARIABLES(17)
       KMAX   = INTBUF_TAB%VARIABLES(18)
       RSTIF  = INTBUF_TAB%VARIABLES(20)
@@ -399,6 +412,139 @@ C--- Corresponding Friction model
       NINLOADP = IPARI(95,NIN) ! load pressure related to inter
       DGAPLOADP = INTBUF_TAB%VARIABLES(46)
 
+C-----------------------------------------------
+C     Type 7 STS: voxel broad-phase only (early RETURN), or fatal error.
+C     Requires /SURF user IDs 100 (secondary) and 200 (master) with
+C     non-empty segment lists.
+C-----------------------------------------------
+      IF (NTY == 7 .AND. STS_ACTIVE) THEN
+        IF (STS_VOXEL_DRIVER_DATA_READY(IGRSURF, NSURF, NOINT,
+     &        JTASK == 1, SEC_SURF_ID_STS, MST_SURF_ID_STS)) THEN
+          CALL MY_BARRIER()
+          IF (JTASK == 1) THEN
+C           Set storage capacity for the candidate arrays. 
+            MAX_STS_SIZE_ACTUAL = MAX(1, MIN(
+     &          IGRSURF(SEC_SURF_ID_STS)%NSEG * 32,
+     &          IGRSURF(SEC_SURF_ID_STS)%NSEG *
+     &          IGRSURF(MST_SURF_ID_STS)%NSEG))
+
+C           Allocate / refresh the working arrays consumed by
+C           STS_CONTACTS_ASSEMBLE and I7ASS33 (ASS_FLAG = 2).
+            IF (ALLOCATED(CONT_ELEMENT))    DEALLOCATE(CONT_ELEMENT)
+            IF (ALLOCATED(load_arr))        DEALLOCATE(load_arr)
+            IF (ALLOCATED(CAND_SEC_SEG_ID)) DEALLOCATE(CAND_SEC_SEG_ID)
+            IF (ALLOCATED(CAND_MST_SEG_ID)) DEALLOCATE(CAND_MST_SEG_ID)
+            IF (ALLOCATED(node_id_load))    DEALLOCATE(node_id_load)
+            ALLOCATE(CONT_ELEMENT(MAX_STS_SIZE_ACTUAL,3,8))
+            ALLOCATE(load_arr(MAX_STS_SIZE_ACTUAL,8,4))
+            ALLOCATE(CAND_SEC_SEG_ID(MAX_STS_SIZE_ACTUAL,5))
+            ALLOCATE(CAND_MST_SEG_ID(MAX_STS_SIZE_ACTUAL,5))
+            ALLOCATE(node_id_load(MAX_STS_SIZE_ACTUAL*8))
+            CONT_ELEMENT  = ZERO
+            load_arr      = ZERO
+            CAND_SEC_SEG_ID = 0
+            CAND_MST_SEG_ID = 0
+            node_id_load    = 0
+
+C           Per-pair friction history.
+            IP_MAX = 2
+            IF (.NOT. ALLOCATED(XI1_HIST) .OR.
+     &          MAX_STS_SIZE_ACTUAL > MAX_STS_SIZE_HIST .OR.
+     &          IP_MAX /= IP_MAX_HIST) THEN
+              IF (ALLOCATED(XI1_HIST)) DEALLOCATE(
+     &          XI1_HIST, XI2_HIST, TTRIAL1_HIST, TTRIAL2_HIST)
+              ALLOCATE(XI1_HIST   (MAX_STS_SIZE_ACTUAL,IP_MAX,IP_MAX))
+              ALLOCATE(XI2_HIST   (MAX_STS_SIZE_ACTUAL,IP_MAX,IP_MAX))
+              ALLOCATE(TTRIAL1_HIST(MAX_STS_SIZE_ACTUAL,IP_MAX,IP_MAX))
+              ALLOCATE(TTRIAL2_HIST(MAX_STS_SIZE_ACTUAL,IP_MAX,IP_MAX))
+              XI1_HIST    = 0.d0
+              XI2_HIST    = 0.d0
+              TTRIAL1_HIST = 0.d0
+              TTRIAL2_HIST = 0.d0
+              MAX_STS_SIZE_HIST = MAX_STS_SIZE_ACTUAL
+              IP_MAX_HIST       = IP_MAX
+            ENDIF
+            CALL sts_gp_state_init(MAX_STS_SIZE_ACTUAL, IP_MAX)
+
+C           Voxel broad phase populates CAND_*_SEG_ID and CONT_ELEMENT.
+            CALL STS_VOXEL_BROAD_PHASE(
+     &          IGRSURF, NSURF, SEC_SURF_ID_STS, MST_SURF_ID_STS,
+     &          X, NUMNOD, GAP_FOR_STS, MAX_STS_SIZE_ACTUAL,
+     &          CAND_SEC_SEG_ID, CAND_MST_SEG_ID, CONT_ELEMENT,
+     &          COUNT, STS_VOXEL_OVERFLOW)
+
+C           Friction model 
+C           TODO: placeholder part-ID mapping; proper part-ID resolution is a separate task.
+            IF (COUNT > 0) THEN
+              DO I = 1, MIN(COUNT, MVSIZ)
+                IPARTFRICSI(I) = 0
+                IPARTFRICMI(I) = 0
+              ENDDO
+              IF (IORTHFRIC == 0) THEN
+                JLT_TIED = 0
+                CALL FRICTIONPARTS_MODEL_ISOT(
+     1               INTFRIC,        MIN(COUNT,MVSIZ),  IPARTFRICSI,
+     2               IPARTFRICMI,    ADPARTS_FRIC,
+     3               NSETPRTS,       TABCOUPLEPARTS_FRIC,NPARTFRIC,
+     4               TABPARTS_FRIC,  TABCOEF_FRIC,
+     5               FRIC,           VISCF,            INTBUF_TAB%FRIC_P,
+     6               FRIC_COEFS,     FRICC,
+     7               VISCFFRIC,      NTY,              MFROT,
+     8               IORTHFRIC,      IFRIC,
+     9               JLT_TIED,       TINT,             TEMPI,
+     A               NPC,            TF,
+     B               TEMP,           H1,               H2,
+     C               H3,             H4,
+     D               IX1,            IX2,              IX3,
+     E               IX4,            IFORM)
+              ENDIF
+            ENDIF
+
+C           STS Gauss contact search.
+            IF (ABS(STIF(1)) <= 1.0D-30) THEN
+              STIF(1) = MAX(ABS(STIGLO), MAXVAL(ABS(INTBUF_TAB%STFNS)))
+              IF (ABS(STIF(1)) <= 1.0D-30) STIF(1) = 1.0D0
+            ENDIF
+            OPTION = 0
+            QFRICT = 0.d0
+            ALPHA0 = XFILTR_FRIC
+            CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION,
+     &        NOINT, NCYCLE, TT,
+     &        CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
+     &        load_arr, node_id_load, L, IMPACT_glob, STIF, 
+     &        MAX_STS_SIZE_ACTUAL, FRICC, XMU, INTBUF_TAB%IFPEN, QFRICT, GAP_FOR_STS)
+
+C           Fall back to Lobatto contact search if Gauss contact search reported no contact.
+            IF (IMPACT_glob == 0) THEN
+              OPTION = 1
+              QFRICT = 0.d0
+              ALPHA0 = XFILTR_FRIC
+              CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION,
+     &          NOINT, NCYCLE, TT,
+     &          CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
+     &          load_arr, node_id_load, L, IMPACT_glob, STIF,
+     &          MAX_STS_SIZE_ACTUAL, FRICC, XMU, INTBUF_TAB%IFPEN, QFRICT, GAP_FOR_STS)
+            ENDIF
+
+C           Scatter the per-pair load_arr / node_id_load directly into A / STIFN. 
+            IF (IMPACT_glob /= 0) THEN
+              IPARI(29,NIN) = 1
+              IF (DEBUG(3) >= 1) NB_JLT_NEW = NB_JLT_NEW + L - 1
+              CALL I7ASS0_STS(A, STIFN, load_arr, node_id_load, L,
+     &          MAX_STS_SIZE_ACTUAL)
+            ENDIF
+          ENDIF
+          CALL MY_BARRIER()
+          RETURN
+        ENDIF
+        CALL MY_BARRIER()
+        IF (JTASK == 1) THEN
+          CALL ANCMSG(MSGID=324, ANMODE=ANINFO, I1=NOINT)
+        ENDIF
+        CALL MY_BARRIER()
+        CALL ARRET(2)
+      ENDIF
+C-----------------------------------------------
       IF(NTY == 7)THEN
         IF(INACTI == 7) TYPE18 = .TRUE.
         IF(TYPE18 .AND. IPARI(34,NIN) == -2) RETURN
@@ -716,14 +862,12 @@ C
       IF (ALLOCATED(load_arr))     DEALLOCATE(load_arr)
       IF (ALLOCATED(CAND_SEC_SEG_ID)) DEALLOCATE(CAND_SEC_SEG_ID)
       IF (ALLOCATED(CAND_MST_SEG_ID)) DEALLOCATE(CAND_MST_SEG_ID)
-      IF (ALLOCATED(CAND_SEC_SEG))    DEALLOCATE(CAND_SEC_SEG)
       IF (ALLOCATED(node_id_load))    DEALLOCATE(node_id_load)
 
       ALLOCATE(CONT_ELEMENT(MAX_STS_SIZE_ACTUAL,3,8))
       ALLOCATE(load_arr(MAX_STS_SIZE_ACTUAL,8,4))
       ALLOCATE(CAND_SEC_SEG_ID(MAX_STS_SIZE_ACTUAL,5))
       ALLOCATE(CAND_MST_SEG_ID(MAX_STS_SIZE_ACTUAL,5))
-      ALLOCATE(CAND_SEC_SEG(MAX_STS_SIZE_ACTUAL))
       ALLOCATE(node_id_load(MAX_STS_SIZE_ACTUAL*8))
 
 C-----------------------------------------------
@@ -791,10 +935,6 @@ C-----------------------------------------------
         GP_MASTER_EL_ID_PREV= 0
       ENDIF
 
-C==========================================================
-C CONTACT ALGORITHM SELECTION
-C   STS_ACTIVE = .TRUE.  -> NEW STS (GAUSS/LOBATTO)
-C   STS_ACTIVE = .FALSE. -> OLD NTS
 C==========================================================
 
         IF (.NOT. STS_ACTIVE) THEN
@@ -958,129 +1098,11 @@ C==========================================================
         !&       sum(FZ1(1:JLT))+sum(FZ2(1:JLT))+sum(FZ3(1:JLT))+sum(FZ4(1:JLT))-sum(FZI(1:JLT))
 
            ENDIF !(JLT_NEW/=0) THEN
-      ELSE !STS_ACTIVE = .TRUE.
-C==========================================================
-C NEW STS ALGORITHM - UNIFIED FOR GAUSS AND LOBATTO
-C==========================================================
-
-C==========================================================
-C NEW STS ALGORITHM - UNIFIED FOR GAUSS AND LOBATTO
-C==========================================================
-C
-
-        ! Find contact partners/candidates only once
-        SEC_SURF_ID_STS = 0
-        IF (IPARI(13,NIN)/10 == 1) SEC_SURF_ID_STS = IPARI(45,NIN)
-        CALL STS_REMAP_SEGMENTS(INTBUF_TAB, X, NUMNOD, IPARI(4,NIN), CAND_SEC_SEG,
-     &   JLT, CAND_N_N, CAND_E_N, INTBUF_TAB%IRECTM, CONT_ELEMENT,
-     &   COUNT, IGRSURF, CAND_SEC_SEG_ID, CAND_MST_SEG_ID,
-     &   MAX_STS_SIZE_ACTUAL, NSURF, SEC_SURF_ID_STS, IPARI(46,NIN))
-
-        ! WRITE(*,*) "---------------------------------------------------"
-        ! WRITE(*,*) "STS: Found ", COUNT, " potentional contact element pairs"
-        ! WRITE(*,*)
-
-        !-------------------------------------------------------------------------------
-        ! Friction model : computation of friction coefficients based on Material of connected Parts
-        !-------------------------------------------------------------------------------
-        IF(ITASK==1) CALL STARTIME(TIMERS,MACRO_TIMER_FRIC)
-
-        IF (COUNT > 0) THEN
-          NFORTH = 0
-          NFISOT = 0
-          ! Map STS contact pairs to friction arrays
-          ! For now, use simplified approach: map each contact pair
-          ! TODO: Properly map part IDs from CAND_SEC_SEG_ID and CAND_MST_SEG_ID
-          DO I = 1, MIN(COUNT, MVSIZ)
-            ! Initialize friction arrays for this contact pair
-            ! This is a placeholder - proper part ID mapping needed
-            IPARTFRICSI(I) = 0
-            IPARTFRICMI(I) = 0
-          ENDDO
-          
-          ! Call friction model (isotropic)
-          ! It will use default values from FRIC and INTBUF_TAB%FRIC_P
-
-          IF (IORTHFRIC == 0) THEN
-            CALL FRICTIONPARTS_MODEL_ISOT(
-     1           INTFRIC        ,MIN(COUNT,MVSIZ),IPARTFRICSI  ,IPARTFRICMI  ,ADPARTS_FRIC   ,
-     2           NSETPRTS       ,TABCOUPLEPARTS_FRIC,NPARTFRIC,TABPARTS_FRIC,TABCOEF_FRIC ,
-     3           FRIC           ,VISCF        ,INTBUF_TAB%FRIC_P,FRIC_COEFS   , FRICC     ,
-     4           VISCFFRIC      ,NTY          ,MFROT            ,IORTHFRIC    , IFRIC     ,
-     5           JLT_TIED       , TINT        ,TEMPI            ,NPC          ,TF         ,
-     6           TEMP           , H1          ,H2               ,H3           ,H4         ,
-     7           IX1            , IX2         ,IX3              ,IX4          ,IFORM      )
-
-          ENDIF
-        ENDIF
-
-        IF(ITASK==1) CALL STOPTIME(TIMERS,MACRO_TIMER_FRIC)
-
-        ! -----------------------
-        ! Try GAUSS SEARCH ALGORITHM
-        ! -----------------------
-        ! WRITE(*,*) "***********************************"
-        ! WRITE(*,*) "STS - GAUSS SEARCH ALGORITHM STARTED"
-        ! WRITE(*,*) "***********************************"
-
-        OPTION = 0 !FOR GAUSS STS ALGORITHM
-        QFRICT = 0.d0 !Friction energy
-        ALPHA0 = XFILTR_FRIC !Parameter for friction force calculation
-               
-       CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION, NOINT, NCYCLE, TT,
-     &   CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
-     &   load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
-     &   FRICC, XMU, INTBUF_TAB%IFPEN, QFRICT, GAP)
-        !IMPACT_glob indicates if any contact was found
-
-        ! If no contact found with GAUSS algorithm, try LOBATTO algorithm
-        IF (IMPACT_glob == 0) THEN
-            ! WRITE(*,*) "NO IMPACT FOUND WITH GAUSS SEARCH ALGORITHM"
-
-            ! -----------------------
-            ! Try LOBATTO SEARCH ALGORITHM
-            ! -----------------------
-            ! WRITE(*,*) "***********************************"
-            ! WRITE(*,*) "STS - LOBATTO SEARCH ALGORITHM STARTED"
-            ! WRITE(*,*) "***********************************"
-
-            OPTION = 1 !FOR LOBATTO STS ALGORITHM
-            QFRICT = 0.d0
-
-            CALL STS_CONTACTS_ASSEMBLE(CONT_ELEMENT, COUNT, OPTION, NOINT, NCYCLE, TT,
-     &        CAND_MST_SEG_ID, CAND_SEC_SEG_ID,
-     &        load_arr, node_id_load, L, IMPACT_glob, STIF, MAX_STS_SIZE_ACTUAL,
-     &      FRICC, XMU, INTBUF_TAB%IFPEN, QFRICT, GAP)
-          
-            IF (IMPACT_glob == 0) THEN
-                ! WRITE(*,*) "NO IMPACT FOUND WITH LOBATTO SEARCH ALGORITHM"
-            ENDIF  
-        ENDIF
-
-        ! Assemble forces if contact was found with either algorithm  
-        IF (IMPACT_glob /= 0) THEN
-          CALL I7ASS33(
-     1  JLT       ,A         ,NOINT     ,ITAB      ,STIFN     ,
-     2  STIF      ,FSKYI      ,ISKY      ,FCONT     ,IX1       ,
-     3  IX2       ,IX3       ,IX4       ,NSVG      ,NELTST    ,
-     4  ITYPTST   ,DT2T      ,NISKYFI   ,ISECIN    ,NSTRF     ,
-     5  SECFCUM   ,VISCN     ,NIN       ,FXI       ,FYI       , 
-     6  FZI       ,FX1       ,FY1       ,FZ1       ,FX2       ,
-     7  FY2       ,FZ2       ,FX3       ,FY3       ,FZ3       ,
-     8  FX4       ,FY4       ,FZ4       ,H1        ,H2        ,
-     9  H3        ,H4        ,KS        ,KT        ,K1        ,
-     A  K2        ,K3        ,K4        ,CS        ,CF        ,
-     B  C1        ,C2        ,C3        ,C4        ,C         ,
-     C  INTTH     ,PHI       ,PHI1      ,PHI2      ,PHI3      ,
-     D  PHI4      ,FTHE      ,FTHESKYI  ,MSKYI_SMS ,ISKYI_SMS ,
-     E  NSMS      ,DTMINI    ,JTASK     ,
-     F  CONDN     ,CONDINT   ,CONDNSKYI ,IXIG3D    ,KXIG3D    ,
-     J  WIGE      ,KNOT      ,IGEO      ,INTBUF_TAB%NIGE      ,
-     K  INTBUF_TAB%RIGE      ,X         ,H3D_DATA  ,KNOTLOCPC ,
-     L  KNOTLOCEL ,IFORM     ,NODADT_THERM, ASS_FLAG , load_arr, node_id_load, L, MAX_STS_SIZE_ACTUAL ) 
-        ENDIF
-        
-        ENDIF ! STS_ACTIVE = .TRUE.
+      ELSE
+C       STS mode should always RETURN via voxel broad-phase above.
+        CALL ANCMSG(MSGID=324, ANMODE=ANINFO, I1=NOINT)
+        CALL ARRET(2)
+        ENDIF ! STS_ACTIVE branch of IF (.NOT. STS_ACTIVE)
         ENDIF ! TYPE18
 C-----------------------------------------------
 C

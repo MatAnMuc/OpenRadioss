@@ -44,7 +44,7 @@
 !-----------------------------------------------
       INTEGER I, J, K, N, NI
       INTEGER candidate, candidateM
-      INTEGER BEST_OVERLAP, OVERLAP, SEC_SURF_IDX
+      INTEGER SEC_SURF_IDX
       LOGICAL :: duplicate
       INTEGER, ALLOCATABLE :: IGRSURF_S_TEMP(:,:)
       INTEGER, ALLOCATABLE :: found_segments(:,:)
@@ -52,35 +52,21 @@
 !-----------------------------------------------
 !   S o u r c e   L i n e s
 !-----------------------------------------------
+!     Caller (i7mainf) is responsible for resolving the hardcoded STS
+!     /SURF user IDs (100 secondary, 200 master) into valid internal
+!     IGRSURF indices and for emitting the user-facing error message
+!     when those surfaces are missing. If the contract was violated, 
+!     yield COUNT=0.
       SEC_SURF_IDX = SEC_SURF_ID
       IF (INTBUF_TAB%S_NSV <= 0 .OR. JLT <= 0) THEN
         COUNT = 0
         RETURN
       END IF
       IF (SEC_SURF_IDX <= 0 .OR. SEC_SURF_IDX > NSURF_LOCAL) THEN
-        BEST_OVERLAP = 0
-        SEC_SURF_IDX = 0
-        DO I = 1, NSURF_LOCAL
-          IF (I == MST_SURF_ID) CYCLE
-          IF (IGRSURF(I)%NSEG <= 0) CYCLE
-          IF (.NOT. ALLOCATED(IGRSURF(I)%NODES)) CYCLE
-          OVERLAP = 0
-          DO J = 1, IGRSURF(I)%NSEG
-            DO K = 1, 4
-              candidate = IGRSURF(I)%NODES(J, K)
-              IF (candidate <= 0) CYCLE
-              IF (ANY(INTBUF_TAB%NSV(1:INTBUF_TAB%S_NSV) == candidate)) THEN
-                OVERLAP = OVERLAP + 1
-              END IF
-            END DO
-          END DO
-          IF (OVERLAP > BEST_OVERLAP) THEN
-            BEST_OVERLAP = OVERLAP
-            SEC_SURF_IDX = I
-          END IF
-        END DO
+        COUNT = 0
+        RETURN
       END IF
-      IF (SEC_SURF_IDX <= 0) THEN
+      IF (MST_SURF_ID <= 0 .OR. MST_SURF_ID > NSURF_LOCAL) THEN
         COUNT = 0
         RETURN
       END IF

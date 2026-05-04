@@ -56,8 +56,10 @@
       INTEGER node_ids(8)  ! Node IDs for velocity interpolation
       REAL*8 fx_prim, fy_prim, fz_prim, fx_sec, fy_sec, fz_sec
       REAL*8 fxf_prim, fyf_prim, fzf_prim, fxf_sec, fyf_sec, fzf_sec
+      REAL*8 k_pair_avg, fn_pair_est
       LOGICAL FILE_EXISTS_STS, STS_CSV_INITIALIZED
-      LOGICAL, PARAMETER :: CSV_OUTPUT_ENABLED = .TRUE.
+      LOGICAL, PARAMETER :: CSV_OUTPUT_ENABLED = .FALSE.
+      LOGICAL, PARAMETER :: STS_DEBUG_PRINT_FORCES = .FALSE.
       SAVE STS_CSV_INITIALIZED
       DATA STS_CSV_INITIALIZED /.FALSE./
 !-----------------------------------------------
@@ -105,7 +107,7 @@
           node_ids(J)   = CAND_MST_SEG_ID(I, J+1)   ! Primary nodes
           node_ids(J+4) = CAND_SEC_SEG_ID(I, J+1)   ! Secondary nodes
         ENDDO
-        XMU(1) = FRICC(1) ! Friction coefficient mu
+        XMU(1) = FRICC(MIN(I,MVSIZ)) ! Friction coefficient mu
       
         ! Call STS_CONTACT_EVAL_PAIRwith friction calculation integrated
         ! Note: STIF is used for both normal and tangential stiffness
@@ -114,11 +116,12 @@
      &                    node_stiff, OPTION, &
      &                    FRICC, XMU, IFPEN, &
      &                    p_friction, EFRICT_LOC, QFRICT, node_ids, &
-     &                    .TRUE., MAX_STS_SIZE_ACTUAL, GAP) 
+     &                    .TRUE., MAX_STS_SIZE_ACTUAL, GAP, &
+     &                    pair_max_penetration)
       
         IF (IMPACT == 1) THEN
           IMPACT_glob = 1
-      
+
 !         Export two rows per contact pair:
 !         - surface 1 (primary nodes 1..4)
 !         - surface 2 (secondary nodes 5..8)

@@ -114,9 +114,9 @@ C-----------------------------------------------
      .   WIGE(*),KNOT(*),RIGE(3,*),KNOTLOCPC(*),KNOTLOCEL(*)
       TYPE(H3D_DATABASE) :: H3D_DATA
       
-      my_real load_arr(MVSIZ,8,4)
+      my_real load_arr(MAX_STS_SIZE_ACTUAL,8,4)
       integer COUNT
-      integer node_id_load(MVSIZ)
+      integer node_id_load(MAX_STS_SIZE_ACTUAL*8)
       INTEGER MAX_STS_SIZE_ACTUAL
 C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
@@ -982,6 +982,7 @@ C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------
       INTEGER I, J1, J, total_nodes, num_blocks, K
+      INTEGER N_CONTACTS
       INTEGER, ALLOCATABLE :: node_arr_reshaped(:,:)
       my_real :: sum_prim, sum_sec
       my_real :: sum_prim_x, sum_prim_y, sum_prim_z
@@ -998,8 +999,7 @@ C-----------------------------------------------
       DEBUG_ASSEMBLY_DETAIL = .FALSE.  ! Set to .TRUE. to enable detailed assembly debug output
       DEBUG_ASSEMBLY_SUMMARY = .FALSE.  ! Set to .TRUE. to enable assembly summary debug output
 !--------------------------------------------------      
-! Adjust count (refers to number of 8-node elements)      
-      COUNT = COUNT-1 !NR OF 8 NODE ELEMENTS 
+      N_CONTACTS = MAX(0, COUNT-1)
 
 C     Initialize force balance counters
       sum_prim = 0.0
@@ -1021,7 +1021,7 @@ C Get total number of node indices and number of 8-node blocks
       num_blocks = MAX_STS_SIZE_ACTUAL
      
 C Assembly loop: add values from load_arr to global force (A) and stiffness (STIFN)      
-      DO I = 1, COUNT!*8
+      DO I = 1, N_CONTACTS
           IF (node_arr((I-1)*8 + 1) <= 0) EXIT  ! Check for valid element
 
 C         Debug: Print first 3 elements
@@ -1101,7 +1101,7 @@ C     Print comprehensive force balance
         WRITE(*,*) "========================================"
         WRITE(*,*) "I7ASS0_STS: ASSEMBLY SUMMARY"
         WRITE(*,*) "========================================"
-        WRITE(*,'("  Elements processed: ",I0)') COUNT
+        WRITE(*,'("  Elements processed: ",I0)') N_CONTACTS
         WRITE(*,'("  Nodes assembled: ",I0)') debug_count
         WRITE(*,*) "----------------------------------------"
         WRITE(*,'("  Primary forces (X, Y, Z): ",3E15.8)') 
@@ -1723,44 +1723,37 @@ C-----------------------------------------------
 C   L o c a l   V a r i a b l e s
 C-----------------------------------------------    
       INTEGER I, J, IG, NISKYL1, NISKYL,IGP,IGM,IDR,NISKYFIL
+      INTEGER N_CONTACTS
 C-----------------------------------------------
 C   S o u r c e   L i n e s
 C-----------------------------------------------      
-C     Safety check: validate count
-      IF (COUNT <= 0) THEN
-        WRITE(*,*) "I7ASS2_STS: WARNING - Invalid count = ", COUNT
+      N_CONTACTS = MAX(0, COUNT - 1)
+      IF (N_CONTACTS <= 0) THEN
         RETURN
       ENDIF
-
-C     Adjust count (refers to number of 8-node elements)
-      COUNT = COUNT - 1
 
 C     Safety check: validate array bounds
-      IF (COUNT*8 > MAX_STS_SIZE_ACTUAL*8) THEN
+      IF (N_CONTACTS > MAX_STS_SIZE_ACTUAL) THEN
         WRITE(*,*) "I7ASS2_STS: ERROR - Array bounds exceeded"
-        WRITE(*,*) "  COUNT*8 = ", COUNT*8, " > MAX_STS_SIZE_ACTUAL*8 = ", MAX_STS_SIZE_ACTUAL*8
+        WRITE(*,*) "  N_CONTACTS = ", N_CONTACTS,
+     &             " > MAX_STS_SIZE_ACTUAL = ", MAX_STS_SIZE_ACTUAL
         RETURN
       ENDIF
 
-C     Fill ISKY array with node IDs
-      DO I = 1, COUNT*8
-          ISKY(I) = node_arr(I)
-      ENDDO
-
 C     Calculate required skyline size and check bounds
-      NISKYL = COUNT * 8
+      NISKYL1 = N_CONTACTS * 8
 
 #include "lockon.inc"
-      IF (NISKY + NISKYL > LSKYI) THEN
+      IF (NISKY + NISKYL1 > LSKYI) THEN
         CALL ANCMSG(MSGID=26,ANMODE=ANINFO)
         CALL ARRET(2)
       ENDIF
       NISKYL = NISKY
-      NISKY = NISKY + NISKYL
+      NISKY = NISKY + NISKYL1
 #include "lockoff.inc"
 
 C     Assemble forces from load_arr into FSKYI
-      DO I = 1, COUNT
+      DO I = 1, N_CONTACTS
           DO J = 1, 8
               NISKYL = NISKYL + 1
 
@@ -1769,6 +1762,7 @@ C             Store force and stiffness in skyline array
               FSKYI(NISKYL, 2) = load_arr(I, J, 2)  ! Y component
               FSKYI(NISKYL, 3) = load_arr(I, J, 3)  ! Z component
               FSKYI(NISKYL, 4) = load_arr(I, J, 4)  ! Stiffness
+              ISKY(NISKYL)     = node_arr((I-1)*8 + J)
           END DO
       END DO
 

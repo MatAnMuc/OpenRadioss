@@ -860,8 +860,8 @@ C
 C     Hardcoded parameters for Q1Np generation from external /SURF
 C     Prototype: smooth (generate Q1NP for) SURF IDs 100 and 200.
 
-      INTEGER, PARAMETER :: SURF_ID_A = 100
-      INTEGER, PARAMETER :: SURF_ID_B = 200
+      INTEGER, PARAMETER :: SURF_ID_A = 1000
+      INTEGER, PARAMETER :: SURF_ID_B = 2000
 
       INTEGER ISURF_ID_A, ISURF_ID_B
       INTEGER P_TEST,Q_TEST

@@ -15,7 +15,7 @@
       subroutine STS_CONTACT_EVAL_PAIR(XUPD, STIF, p, IMPACT, EL_NR, node_stiff, OPTION, &
       &                   FRICC, XMU, IFPEN, &
       &                   p_friction, EFRICT, QFRICT, node_ids, &
-      &                   CALC_FRICTION, MAX_STS_SIZE, GAP)
+      &                   CALC_FRICTION, MAX_STS_SIZE, GAP, PAIR_MAX_PENETRATION)
 !-----------------------------------------------
 !   M o d u l e s   /   I m p l i c i t   T y p e s
 !-----------------------------------------------
@@ -47,7 +47,8 @@
 !     node_ids : Node IDs for velocity interpolation (8 components)
 !     CALC_FRICTION: Flag to enable/disable friction calculation
 !     MAX_STS_SIZE: Maximum size for history arrays
-!     GAPV: Gap value from user input
+!     GAP   : Gap used in penetration test.
+!     PAIR_MAX_PENETRATION : Max |penetr - gap| over activated Gauss points.
 !-----------------------------------------------
       INTEGER IMPACT, OPTION, EL_NR
       INTEGER node_ids(8)
@@ -61,7 +62,7 @@
       my_real EFRICT, QFRICT
       INTEGER MAX_STS_SIZE  ! Maximum size for history arrays
       my_real GAP  ! Gap value from user input
-      REAL*8 MAX_PENETRATION_OUT
+      REAL*8, INTENT(OUT) :: PAIR_MAX_PENETRATION
 !     interface to global gp index function
       INTEGER GET_GLOBAL_GP_INDEX
 !-----------------------------------------------
@@ -121,7 +122,7 @@
 !   I n i t i a l i z a t i o n
 !-----------------------------------------------
       IMPACT = 0
-      MAX_PENETRATION_OUT = 0.0D0
+      PAIR_MAX_PENETRATION = 0.0D0
       ip = 2 ! Quadrature order
       pair_fric_idx = MIN(MAX(EL_NR, 1), MVSIZ)
       fac_min = 1.0d30
@@ -155,7 +156,7 @@
         pm_friction(i) = 0.d0
         p_friction(i) = 0.d0
       ENDDO
-      GAPV = GAP ! Use user-defined Gapmin value
+      GAPV = GAP ! Effective scalar gap (MIN(GAPMAX,MAX(GAPMIN,GAP))).
       energy = 0.0d0
       EFRICT = 0.d0
       XMU(1) = FRICC(pair_fric_idx) ! Friction coefficient mu
@@ -276,7 +277,6 @@
 
           ! Check for penetration
           PENE = penetr - GAPV
-          
           ! No penetration - skip to next Gauss point
           IF (PENE .GT. 0.d0) THEN
             CYCLE
@@ -286,8 +286,8 @@
           IMPACT = 1
           penetr = PENE
           active_area = active_area + area_weight
-          MAX_PENETRATION_OUT = MAX(MAX_PENETRATION_OUT, DABS(PENE))
-          
+          PAIR_MAX_PENETRATION = MAX(PAIR_MAX_PENETRATION, DABS(PENE))
+
           ! Calculate penalty parameter. 
           d1 = STIF(1)
           IF (DABS(GAPV) .GT. EM10) THEN
@@ -508,7 +508,7 @@
       IF (STS_DEBUG_PENALTY .AND. IMPACT == 1) THEN
         pair_force_mag = DSQRT(p(1)**2 + p(2)**2 + p(3)**2)
         WRITE(6,*) 'STS penalty diag: pair=', EL_NR, ', opt=', OPTION, &
-     &             ', STIF1=', STIF(1), ', pen=', MAX_PENETRATION_OUT, &
+     &             ', STIF1=', STIF(1), ', pen=', PAIR_MAX_PENETRATION, &
      &             ', fac[min,max]=', fac_min, fac_max, &
      &             ', k=', node_stiff(1), ', scale=', STS_PENALTY_SCALE
       ENDIF
