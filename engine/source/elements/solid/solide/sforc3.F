@@ -58,6 +58,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    mod_close              ../engine/source/elements/solid/solide/mod_close.F
 !||    s11defo3               ../engine/source/elements/solid/solide/s11defo3.F
 !||    s11fx3                 ../engine/source/elements/solid/solide/s11fx3.F
+!||    s8dlenmax_sm           ../engine/source/elements/solid/solide/s8dlenmax_sm.F90
 !||    s8for_distor           ../engine/source/elements/solid/solide/s8for_distor.F
 !||    s8get_x3               ../engine/source/elements/solid/solide/s8get_x3.F
 !||    s8sav12                ../engine/source/elements/solid/solide/s8sav12.F
@@ -118,6 +119,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    mmain_mod              ../engine/source/materials/mat_share/mmain.F90
 !||    nlocal_reg_mod         ../common_source/modules/nlocal_reg_mod.F
 !||    output_mod             ../common_source/modules/output/output_mod.F90
+!||    s8dlenmax_sm_mod       ../engine/source/elements/solid/solide/s8dlenmax_sm.F90
 !||    sdistor_ini_mod        ../engine/source/elements/solid/solide/sdistror_ini.F90
 !||    sensor_mod             ../common_source/modules/sensor_mod.F90
 !||    table_mod              ../engine/share/modules/table_mod.F
@@ -172,6 +174,7 @@ C-----------------------------------------------
       USE SDISTOR_INI_MOD, ONLY : SDISTOR_INI
       use glob_therm_mod
       use element_mod , only : nixs
+      use s8dlenmax_sm_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -422,7 +425,7 @@ C
       my_real, DIMENSION(:), ALLOCATABLE :: VAR_REG
       my_real :: CONDE(MVSIZ),AMU(MVSIZ),DIVDE(MVSIZ),L_MAX(MVSIZ),
      .           STI_C(MVSIZ),LL(MVSIZ),FLD(MVSIZ),OFFG11(MVSIZ),
-     .           CNS2,FQMAX
+     .           CNS2,FQMAX,VOLGS(MVSIZ),L_MIN(MVSIZ),RHO0
       my_real, DIMENSION(:), POINTER :: EINT
       my_real :: ELEM_MASS
       my_real :: SUM_EPS(9),SUM_M,SUM_VOL
@@ -1069,7 +1072,16 @@ C Compute Strains for output
       IF ((IMON_MAT==1).AND. ITASK == 0) CALL STOPTIME(TIMERS,35)
 C
       IF (NN_DEL >0) THEN
-        CALL SDLENMAX(L_MAX, 
+        IF (ISMSTR == 1 .OR. ISMSTR == 11) THEN 
+          RHO0 = PM(1,IMAT)
+          CALL S8DLENMAX_SM(                          
+     1           NEL      ,RHO0     ,GBUF%VOL    ,X      ,       
+     2           NC1      ,NC2      ,NC3        ,NC4     ,       
+     3           NC5      ,NC6      ,NC7        ,NC8     ,       
+     4           L_MAX    ,GBUF%RHO ,VOLGS      ,L_MIN   ,
+     5           NUMNOD )
+        ELSE
+          CALL SDLENMAX(L_MAX, 
      1   X1,      X2,      X3,      X4,      
      2   X5,      X6,      X7,      X8,      
      3   Y1,      Y2,      Y3,      Y4,      
@@ -1077,7 +1089,10 @@ C
      5   Z1,      Z2,      Z3,      Z4,      
      6   Z5,      Z6,      Z7,      Z8,      
      7   NEL)
-       CALL SGEODEL3(NGL,GBUF%OFF,VOLN,DELTAX,GBUF%VOL,GEO(1,NGEO(1)),L_MAX,DT,NEL,IDEL7NOK )
+         VOLGS(1:NEL) =VOLN(1:NEL)
+         L_MIN(1:NEL) =DELTAX(1:NEL)
+        END IF  
+       CALL SGEODEL3(NGL,GBUF%OFF,VOLGS,L_MIN,GBUF%VOL,GEO(1,NGEO(1)),L_MAX,DT,NEL,IDEL7NOK )
       END IF
 C Small Strain
       CALL SMALLB3(

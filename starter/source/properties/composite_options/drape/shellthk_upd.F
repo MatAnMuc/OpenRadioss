@@ -176,12 +176,11 @@ C  re-set the thickness of shell according to /DRAPE layer thinning
                        NSLICE = DRAPE_PLY%NSLICE
                        IF(IINT == 1) THEN
                         DO K=1,NSLICE
-                          THK_IT = THKLY/NSLICE
                           THINNING = DRAPE_PLY%RDRAPE(K,1)
-                          THK_IT = THK_IT*THINNING
+                          THK_IT = THKLY*THINNING
                           THICKC = THICKC + THK_IT
                         ENDDO
-                       ELSEIF(IINT == 2) THEN  
+                       ELSEIF(IINT == 2) THEN ! only available with old definition Ithinning=1 
                         DO K=1,NSLICE
                           THK_IT = HALF*THKLY*W_GAUSS(K,NSLICE)
                           THINNING = DRAPE_PLY%RDRAPE(K,1)
@@ -255,9 +254,8 @@ C
                        NSLICE = DRAPE_PLY%NSLICE
                        IF(IINT == 1) THEN
                         DO K=1,NSLICE
-                          THK_IT = THKLY/NSLICE
                           THINNING = DRAPE_PLY%RDRAPE(K,1)
-                          THK_IT = THK_IT*THINNING
+                          THK_IT = THKLY*THINNING
                           THICKC = THICKC + THK_IT
                         ENDDO
                        ELSEIF(IINT == 2) THEN  

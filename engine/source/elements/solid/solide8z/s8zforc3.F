@@ -31,6 +31,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    degenes8               ../engine/source/elements/solid/solide/degenes8.F
 !||    jacob_f0               ../engine/source/elements/solid/solide8e/jacob_f0.F
 !||    mmain                  ../engine/source/materials/mat_share/mmain.F90
+!||    s8dlenmax_sm           ../engine/source/elements/solid/solide/s8dlenmax_sm.F90
 !||    s8edefw3               ../engine/source/elements/solid/solide8e/s8edefw3.F
 !||    s8etherm               ../engine/source/elements/solid/solide8e/s8etherm.F
 !||    s8fupd11t12            ../engine/source/elements/solid/solide8e/s8fupd11t12.F
@@ -92,6 +93,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    mmain_mod              ../engine/source/materials/mat_share/mmain.F90
 !||    nlocal_reg_mod         ../common_source/modules/nlocal_reg_mod.F
 !||    output_mod             ../common_source/modules/output/output_mod.F90
+!||    s8dlenmax_sm_mod       ../engine/source/elements/solid/solide/s8dlenmax_sm.F90
 !||    sensor_mod             ../common_source/modules/sensor_mod.F90
 !||    sz_dt1_mod             ../engine/source/elements/solid/solidez/sz_dt1.F90
 !||    table_mod              ../engine/share/modules/table_mod.F
@@ -137,6 +139,7 @@ C-----------------------------------------------
       use glob_therm_mod
       USE sz_dt1_mod, only : sz_dt1
       use element_mod , only : nixs
+      use s8dlenmax_sm_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -339,7 +342,7 @@ C   variables used only in solid routines (as arguments)
      .   G1Z(MVSIZ),G2Z(MVSIZ),G3Z(MVSIZ)
       my_real
      .   WI,SMAX(MVSIZ),VOLG(MVSIZ),NU(MVSIZ),PP(MVSIZ),USB(MVSIZ),
-     .   DTI,BID(MVSIZ),FAC_NU,NU_SP,NU0
+     .   DTI,BID(MVSIZ),FAC_NU,NU_SP,NU0,VOLGS(MVSIZ),L_MIN(MVSIZ),RHO0
       my_real
      .   SIGY(MVSIZ), SIGN(NEL,6),ET(MVSIZ), NU1(MVSIZ),
      . R1_FREE(MVSIZ),R3_FREE(MVSIZ),DELTAXI(MVSIZ)
@@ -1441,7 +1444,16 @@ c----------------------
       ENDIF
       ITET = 0
       IF (NN_DEL >0) THEN
-        CALL SDLENMAX(L_MAX, 
+        IF (ISMSTR == 1 .OR. ISMSTR == 11) THEN 
+          RHO0 = PM(1,IMAT)
+          CALL S8DLENMAX_SM(                          
+     1           NEL      ,RHO0     ,GBUF%VOL   ,X       ,       
+     2           NC1      ,NC2      ,NC3        ,NC4     ,       
+     3           NC5      ,NC6      ,NC7        ,NC8     ,       
+     4           L_MAX    ,GBUF%RHO ,VOLGS      ,L_MIN   ,
+     5           NUMNOD )
+        ELSE
+          CALL SDLENMAX(L_MAX, 
      1   X1,      X2,      X3,      X4,      
      2   X5,      X6,      X7,      X8,      
      3   Y1,      Y2,      Y3,      Y4,      
@@ -1449,7 +1461,10 @@ c----------------------
      5   Z1,      Z2,      Z3,      Z4,      
      6   Z5,      Z6,      Z7,      Z8,      
      7   NEL)
-       CALL SGEODEL3(NGL,GBUF%OFF,VOLG,DELTAX,GBUF%VOL,GEO(1,NGEO(1)),L_MAX,DT,NEL,IDEL7NOK)
+         VOLGS(1:NEL) =VOLG(1:NEL)
+         L_MIN(1:NEL) =DELTAX(1:NEL)
+       END IF
+       CALL SGEODEL3(NGL,GBUF%OFF,VOLGS,L_MIN,GBUF%VOL,GEO(1,NGEO(1)),L_MAX,DT,NEL,IDEL7NOK)
       END IF
 C-----------------------------
 C     SMALL STRAIN 

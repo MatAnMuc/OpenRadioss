@@ -26,6 +26,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    r23law108    ../engine/source/elements/spring/r23law108.F
 !||    r23law113    ../engine/source/elements/spring/r23law113.F
 !||    r23law114    ../engine/source/elements/spring/r23law114.F
+!||    r23law135    ../engine/source/elements/spring/r23law135.F90
 !||--- uses       -----------------------------------------------------
 !||    sensor_mod   ../common_source/modules/sensor_mod.F90
 !||====================================================================
@@ -62,9 +63,9 @@ C-----------------------------------------------
 C-----------------------------------------------
       DO I=1,NEL
         ISENS=0
-        USENS=IGEO(3,PID(I))
-        IFL=IGEO(5,PID(I))
-        DO K=1,NSENSOR
+        USENS=IGEO(3,PID(I))     
+        IFL=IGEO(5,PID(I))     
+        DO K=1,NSENSOR  
           IF (ABS(USENS) == SENSOR_TAB(K)%SENS_ID) ISENS=K
         ENDDO
         IF (IFL == 2) THEN

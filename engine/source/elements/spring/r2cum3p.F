@@ -24,6 +24,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    r2cum3p     ../engine/source/elements/spring/r2cum3p.F
 !||--- called by ------------------------------------------------------
 !||    r23law108   ../engine/source/elements/spring/r23law108.F
+!||    r23law135   ../engine/source/elements/spring/r23law135.F90
 !||    rforc3      ../engine/source/elements/spring/rforc3.F
 !||====================================================================
       SUBROUTINE R2CUM3P(
@@ -37,7 +38,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      8   Y2,      Z2,      IEQUIL,  EXX,
      9   EYX,     EZX,     EXY,     EYY,
      A   EZY,     EXZ,     EYZ,     EZZ,
-     B   NEL,     NFT)
+     B   NEL,     NFT,     MTN)
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -55,7 +56,7 @@ C-----------------------------------------------
 C-----------------------------------------------
 C   D u m m y   A r g u m e n t s
 C-----------------------------------------------
-      INTEGER, INTENT(IN) :: NEL
+      INTEGER, INTENT(IN) :: NEL,MTN
       INTEGER, INTENT(IN) :: NFT
 C     REAL
       my_real
@@ -100,12 +101,20 @@ C-------------------------
           FSKYV(N,1)=-FX1(I)
           FSKYV(N,2)=-FY1(I)
           FSKYV(N,3)=-FZ1(I)
-          FSKYV(N,7)=STI(1,I)
+          IF (MTN == 135) THEN
+            FSKYV(N,7)=TWO*STI(1,I)
+          ELSE 
+            FSKYV(N,7)=STI(1,I)
+          ENDIF
           N = IADR(2,II)
           FSKYV(N,1)=-FX2(I)
           FSKYV(N,2)=-FY2(I)
           FSKYV(N,3)=-FZ2(I)
-          FSKYV(N,7)=STI(2,I)
+          IF (MTN == 135) THEN
+            FSKYV(N,7)=TWO*STI(2,I)
+          ELSE          
+            FSKYV(N,7)=STI(2,I)
+          ENDIF
         ENDDO
       ELSE
         DO I=1,NEL
@@ -114,12 +123,20 @@ C-------------------------
           FSKY(1,N)=-FX1(I)
           FSKY(2,N)=-FY1(I)
           FSKY(3,N)=-FZ1(I)
-          FSKY(7,N)=STI(1,I)
+          IF (MTN == 135) THEN
+            FSKY(7,N)=TWO*STI(1,I)
+          ELSE 
+            FSKY(7,N)=STI(1,I)
+          ENDIF
           N = IADR(2,II)
           FSKY(1,N)=-FX2(I)
           FSKY(2,N)=-FY2(I)
           FSKY(3,N)=-FZ2(I)
-          FSKY(7,N)=STI(2,I)
+          IF (MTN == 135) THEN
+            FSKY(7,N)=TWO*STI(2,I)
+          ELSE
+            FSKY(7,N)=STI(2,I)
+          ENDIF
         ENDDO
       ENDIF
 C-------------------------

@@ -1345,7 +1345,9 @@ C SPH
       type(constraint_) :: constraint_struct
 C RWALL PENALTY   
       INTEGER :: SLN_PEN
-      my_real, DIMENSION(:), ALLOCATABLE :: RWSTIF_PEN
+      my_real, DIMENSION(:), ALLOCATABLE :: RWSTIF_PEN 
+      ! drape flag
+      INTEGER :: ITHIN_DRAPE
 
       integer, parameter :: nb_key = 9 
       integer :: iwarnhb,n_entity
@@ -2471,7 +2473,7 @@ C
      .                          NPC        , TF          , UNITAB   , RTRANS   ,LSUBMODEL ,
      .                          PROP_TAG   , IPART       , KNOT     , IDRAPEID ,STACK_INFO,
      .                          NUMGEOSTACK, NPROP_STACK , MULTI_FVM, IADGEO   ,DEFAULTS  ,
-     .                          MAT_ELEM%MAT_PARAM)
+     .                          MAT_ELEM%MAT_PARAM,  ISMS)
 C
         ALLOCATE(BUFGEO(SBUFGEO)    ,STAT=stat)
         IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
@@ -5254,9 +5256,11 @@ C-------------------------
      .                   IWORK_T  )
         ENDIF        
       !!   
+       
+         ITHIN_DRAPE = DEFAULTS%SHELL%ithin_drape
          CALL HM_READ_DRAPE(DRAPE_WRK ,IWORK_T       ,IWORKSH   ,IGRSH3N   ,IGRSH4N  ,
      .                     IXC       ,IXTG           ,IGEO       ,IGEO_STACK,LSUBMODEL,
-     .                     UNITAB    ,INDXSH         )
+     .                     UNITAB    ,INDXSH         ,ITHIN_DRAPE )
          IF( NUMELC_DRAPE  > 0) SCDRAPE = NUMELC
          IF( NUMELTG_DRAPE > 0) STDRAPE = NUMELTG
          ALLOCATE(DRAPE(NUMELC_DRAPE +NUMELTG_DRAPE) ) 

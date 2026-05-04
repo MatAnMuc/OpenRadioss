@@ -30,6 +30,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    s6cbilan               ../engine/source/elements/thickshell/solide6c/s6cbilan.F
 !||    s6cdefc3               ../engine/source/elements/thickshell/solide6c/s6cdefo3.F
 !||    s6cderi3               ../engine/source/elements/thickshell/solide6c/s6cderi3.F
+!||    s6cdlenmax_sm          ../engine/source/elements/thickshell/solide6c/s6cdlenmax_sm.F90
 !||    s6cfint3               ../engine/source/elements/thickshell/solide6c/s6cfint3.F
 !||    s6cfint_reg            ../engine/source/elements/thickshell/solide6c/s6cfint_reg.F
 !||    s6chour3               ../engine/source/elements/thickshell/solide6c/s6chourg3.F
@@ -70,6 +71,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    mmain_mod              ../engine/source/materials/mat_share/mmain.F90
 !||    nlocal_reg_mod         ../common_source/modules/nlocal_reg_mod.F
 !||    output_mod             ../common_source/modules/output/output_mod.F90
+!||    s6cdlenmax_sm_mod      ../engine/source/elements/thickshell/solide6c/s6cdlenmax_sm.F90
 !||    s6chour_ctl_mod        ../engine/source/elements/thickshell/solide6c/s6chour_ctl.F90
 !||    s6for_distor_mod       ../engine/source/elements/thickshell/solide6c/s6for_distor.F90
 !||    s6get_xv_mod           ../engine/source/elements/thickshell/solide6c/s6get_xv.F90
@@ -117,6 +119,7 @@ C-----------------------------------------------
       use glob_therm_mod
       USE SENSOR_MOD
       use element_mod , only : nixs
+      use s6cdlenmax_sm_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -287,7 +290,7 @@ C     ENSURE DOUBLE-PRECISION (64-BIT) FLOATING-POINT CALCULATIONS, EVEN WHEN CO
       my_real, DIMENSION(:,:), ALLOCATABLE :: VAR_REG
       my_real, DIMENSION(:), POINTER :: DNL
       my_real :: STI_C(MVSIZ),LL(MVSIZ),FLD(MVSIZ),
-     .           CNS2,FQMAX,DN
+     .           CNS2,FQMAX,DN,VOLGS(MVSIZ)
       integer :: fake_size = 0
       my_real, dimension(1) :: fake_array     
 C-----
@@ -873,11 +876,19 @@ c
         ENDDO
       ENDIF
       IF ( NN_DEL> 0) THEN
-        CALL SDLENSH3N2(VOLG,LLSH,AREA , 
+        IF (ISMSTR == 1 .OR. ISMSTR == 11) THEN 
+          CALL S6CDLENMAX_SM(                          
+     1           NEL      ,X        ,NUMNOD     ,VOLGS   ,       
+     2           NC1      ,NC2      ,NC3        ,NC4     ,       
+     3           NC5      ,NC6      ,LLSH       ,AREA     )
+        ELSE
+          CALL SDLENSH3N2(VOLG,LLSH,AREA , 
      .                  X1, X2, X3, X4, X5, X6,
      .                  Y1, Y2, Y3, Y4, Y5, Y6,
      .                  Z1, Z2, Z3, Z4, Z5, Z6, NEL)
-        CALL TSHGEODEL3(NGL,GBUF%OFF,VOLG,AREA,GBUF%VOL,
+          VOLGS(1:NEL) =VOLG(1:NEL)
+        END IF !(ISMSTR == 1 .OR. ISMSTR == 11) THEN 
+        CALL TSHGEODEL3(NGL,GBUF%OFF,VOLGS,AREA,GBUF%VOL,
      .                  LLSH,GEO(1,PID),NN_DEL,DT,NEL )
       ENDIF
 C-----------------------------

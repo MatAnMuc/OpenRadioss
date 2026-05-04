@@ -83,6 +83,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    qinit2                          ../starter/source/elements/solid_2d/quad/qinit2.F
 !||    rcheckmass                      ../starter/source/elements/spring/rcheckmass.F
 !||    retrirby                        ../starter/source/constraints/general/merge/hm_read_merge.F
+!||    rini135_rb                      ../starter/source/elements/joint/rjoint/rini135_rb.F90
 !||    rini33_rb                       ../starter/source/elements/joint/rjoint/rini33_rb.F
 !||    rini45_rb                       ../starter/source/elements/joint/rjoint/rini45_rb.F
 !||    rinit3                          ../starter/source/elements/spring/rinit3.F
@@ -133,6 +134,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    init_seatbelt_rbodies_mod       ../starter/source/tools/seatbelts/init_seatbelt_rbodies.F90
 !||    inivol_def_mod                  ../starter/share/modules1/inivol_mod.F
 !||    message_mod                     ../starter/share/message_module/message_mod.F
+!||    rini135_rb_mod                  ../starter/source/elements/joint/rjoint/rini135_rb.F90
 !||    s6zinit3_mod                    ../starter/source/elements/solid/solide6z/s6zinit3.F90
 !||    stack_mod                       ../starter/share/modules1/stack_mod.F
 !||    submodel_mod                    ../starter/share/modules1/submodel_mod.F
@@ -249,6 +251,7 @@ C-----------------------------------------------
       USE Q1NP_INIT_LBUF_VOL_MOD
       USE Q1NP_MASS3_MOD
       USE Q1NP_VOLUME_MOD
+      use rini135_rb_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -2178,6 +2181,16 @@ C------------------------------------------------------
             CALL RINI45_RB(NEL,NUVAR,IPROP,IXR,NPBY,
      .                     LPBY,RBY,STIFR,GBUF%VAR,ITAB,
      .                     IGEO(1,IPROP),IXR_KJ,GBUF%MASS,MS,IN)
+          ELSEIF (IGTYP==23 .AND. MTN ==135) THEN
+            NUVAR = GBUF%G_NUVAR
+            FLAG_KJ = 1
+      CALL RINI135_RB(
+     .   NEL         ,NUVAR       ,IXR         ,NPBY        ,
+     .   LPBY        ,RBY         ,GBUF%VAR    ,ITAB        ,
+     .   IGEO(1,IPROP),MS         ,IN          ,NFT         ,
+     .   NUMELR      ,NNPBY       ,NRBODY                   ,
+     .   SLPBY       ,NUMNOD      ,NPROPGI     ,NRBY        ,
+     .   LTITR) 
           ENDIF
         ENDIF
       ENDDO

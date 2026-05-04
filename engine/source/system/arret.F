@@ -431,6 +431,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    file_descriptor_mod              ../engine/source/modules/file_descriptor_mod.F90
 !||    h3d_mod                          ../engine/share/modules/h3d_mod.F
 !||    inoutfile_mod                    ../common_source/modules/inoutfile_mod.F
+!||    mds_restart_mod                  ../common_source/modules/mds_rest.mod.F
 !||    output_mod                       ../common_source/modules/output/output_mod.F90
 !||    qa_out_mod                       ../common_source/qa/qa_out_mod.F
 !||    scratchfile_mod                  ../engine/share/modules/scratchfiles_mod.F
@@ -443,6 +444,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
       USE SCRATCHFILE_MOD
       USE OUTPUT_MOD
       USE file_descriptor_mod
+      USE MDS_RESTART_MOD
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -615,7 +617,7 @@ C -----------------------------------------------
       ENDIF
       ! ----------------------
 #ifdef DNC
-      IF(MDS_AVAIL==1) THEN
+      IF(MDS_AVAIL==1 .and. MDS_NMAT > 0) THEN
         ISPMD_USER = ISPMD
         CALL MDS_ENGINE_USER_FINALIZE( ISPMD_USER )
       ENDIF

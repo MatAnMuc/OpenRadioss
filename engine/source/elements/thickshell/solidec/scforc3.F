@@ -31,6 +31,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    s8for_distor           ../engine/source/elements/solid/solide/s8for_distor.F
 !||    s8get_x3               ../engine/source/elements/solid/solide/s8get_x3.F
 !||    s8sav3                 ../engine/source/elements/solid/solide/s8sav3.F
+!||    sc8dlenmax_sm          ../engine/source/elements/thickshell/solidec/sc8dlenmax_sm.F90
 !||    scdefc3                ../engine/source/elements/thickshell/solidec/scdefc3.F
 !||    scdefo3                ../engine/source/elements/thickshell/solidec/scdefo3.F
 !||    scderi3                ../engine/source/elements/thickshell/solidec/scderi3.F
@@ -69,6 +70,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
 !||    mmain_mod              ../engine/source/materials/mat_share/mmain.F90
 !||    nlocal_reg_mod         ../common_source/modules/nlocal_reg_mod.F
 !||    output_mod             ../common_source/modules/output/output_mod.F90
+!||    sc8dlenmax_sm_mod      ../engine/source/elements/thickshell/solidec/sc8dlenmax_sm.F90
 !||    sdistor_ini_mod        ../engine/source/elements/solid/solide/sdistror_ini.F90
 !||    sensor_mod             ../common_source/modules/sensor_mod.F90
 !||    shour_ctl_mod          ../engine/source/elements/solid/solidez/shour_ctl.F90
@@ -112,6 +114,7 @@ C-----------------------------------------------
       use glob_therm_mod
       use sensor_mod
       use element_mod , only : nixs
+      use sc8dlenmax_sm_mod
 C-----------------------------------------------
 C   I m p l i c i t   T y p e s
 C-----------------------------------------------
@@ -305,7 +308,7 @@ C-----
       my_real, DIMENSION(:,:), ALLOCATABLE :: VAR_REG
       my_real, DIMENSION(:), POINTER :: DNL
       my_real :: STI_C(MVSIZ),LL(MVSIZ),FLD(MVSIZ),
-     .           CNS2,FQMAX,DN
+     .           CNS2,FQMAX,DN,VOLGS(MVSIZ)
       integer :: fake_size = 0
       my_real, dimension(1) :: fake_array           
 C-----
@@ -953,11 +956,20 @@ C-----------------------------
         ENDDO
       ENDIF
       IF ( NN_DEL> 0) THEN
+        IF (ISMSTR == 1 .OR. ISMSTR == 11) THEN 
+          CALL SC8DLENMAX_SM(                          
+     1           NEL      ,X        ,NUMNOD     ,VOLGS   ,       
+     2           NC1      ,NC2      ,NC3        ,NC4     ,       
+     3           NC5      ,NC6      ,NC7        ,NC8     ,       
+     4           LLSH     ,AREA     ,0  )
+        ELSE
          CALL SDLENSH2(VOLG,LLSH,AREA ,
      .          X1, X2, X3, X4, X5, X6, X7, X8,
      .          Y1, Y2, Y3, Y4, Y5, Y6, Y7, Y8,
      .          Z1, Z2, Z3, Z4, Z5, Z6, Z7, Z8,NEL)
-        CALL TSHGEODEL3(NGL,GBUF%OFF,VOLG,AREA,GBUF%VOL,
+         VOLGS(1:NEL) =VOLG(1:NEL)
+        END IF !(ISMSTR == 1 .OR. ISMSTR == 11) THEN 
+        CALL TSHGEODEL3(NGL,GBUF%OFF,VOLGS,AREA,GBUF%VOL,
      .                  LLSH,GEO(1,PID),NN_DEL,DT,NEL )
       ENDIF
 C-----------------------------

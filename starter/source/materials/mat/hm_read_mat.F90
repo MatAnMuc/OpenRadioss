@@ -92,6 +92,7 @@
 !||    hm_read_mat132               ../starter/source/materials/mat/mat132/hm_read_mat132.F90
 !||    hm_read_mat133               ../starter/source/materials/mat/mat133/hm_read_mat133.F90
 !||    hm_read_mat134               ../starter/source/materials/mat/mat134/hm_read_mat134.F90
+!||    hm_read_mat135               ../starter/source/materials/mat/mat135/hm_read_mat135.F90
 !||    hm_read_mat14                ../starter/source/materials/mat/mat014/hm_read_mat14.F
 !||    hm_read_mat15                ../starter/source/materials/mat/mat015/hm_read_mat15.F
 !||    hm_read_mat151               ../starter/source/materials/mat/mat151/hm_read_mat151.F
@@ -190,6 +191,7 @@
 !||    hm_read_mat132_mod           ../starter/source/materials/mat/mat132/hm_read_mat132.F90
 !||    hm_read_mat133_mod           ../starter/source/materials/mat/mat133/hm_read_mat133.F90
 !||    hm_read_mat134_mod           ../starter/source/materials/mat/mat134/hm_read_mat134.F90
+!||    hm_read_mat135_mod           ../starter/source/materials/mat/mat135/hm_read_mat135.F90
 !||    hm_read_mat163_mod           ../starter/source/materials/mat/mat163/hm_read_mat163.F90
 !||    hm_read_mat169_arup_mod      ../starter/source/materials/mat/mat169/hm_read_mat169.F90
 !||    hm_read_mat50_mod            ../starter/source/materials/mat/mat050/hm_read_mat50.F90
@@ -245,6 +247,7 @@
           use hm_read_mat132_mod , only : hm_read_mat132
           use hm_read_mat133_mod , only : hm_read_mat133
           use hm_read_mat134_mod
+          use hm_read_mat135_mod
           use hm_read_mat163_mod
           use hm_read_mat169_arup_mod
           use names_and_titles_mod ,only : nchartitle, ncharline
@@ -1272,6 +1275,12 @@
               &matparam  ,   parmat , nuvar  ,  unitab    ,lsubmodel,&
               &mat_id    ,titr       ,iout     )
 !-------
+             case ('LAW135','GENERAL_JOINT')
+               ilaw  = 135 
+               call hm_read_mat135(matparam ,                      &
+                mtag     ,nuvar    ,                              &
+                iout     ,unitab   ,lsubmodel, mat_id)
+!-------
              case ('LAW151','MULTIFLUID')
               ilaw  = 151
               multi_fvm%is_used = .true.
@@ -1581,6 +1590,7 @@
 
             mtag%l_ssp = 1                         ! sound speed, always allocated
 
+            if (matparam%crit_plas == 0 .and. matparam%compressibility==3 ) matparam%crit_plas=1 ! only not von mises criterion need to be intialized 
 !---------------------------------------------------------
 ! for qeph (shell formulation)
             if (ipm(2,i) /= 999) then ! if ipm(2,) == 999 possible negative square root with pm(25)=cpe(gas)
