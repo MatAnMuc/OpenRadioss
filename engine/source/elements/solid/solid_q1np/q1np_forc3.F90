@@ -117,6 +117,7 @@
   !-----------------------------------------------
 #include      "mvsiz_p.inc"
 #include      "my_real.inc"
+#include      "vect01_ff.inc"
   !-----------------------------------------------
   !   D u m m y   A r g u m e n t s
   !-----------------------------------------------
@@ -238,28 +239,6 @@
       LOGICAL, SAVE, ALLOCATABLE :: Q1NP_BULK_FIX_READY(:)
       COMMON /SCR18R/ DTFAC1, DTMIN1, PERCENT_ADDMASS, &
      &                DT_STOP_PERCENT_ADDMASS, MASS0_START, PERCENT_ADDMASS_OLD
-  !-----------------------------------------------
-  !   VECT01 common block re-declaration
-  !-----------------------------------------------
-      INTEGER :: V01_LFT, V01_LLT, V01_NFT, V01_MTN, V01_IAD,        &
-     &           V01_ITY, V01_NPT, V01_JALE, V01_ISMSTR, V01_JEUL,   &
-     &           V01_JTUR, V01_JTHE, V01_JLAG, V01_JMULT, V01_JHBE,  &
-     &           V01_JIVF, V01_NVAUX, V01_JPOR, V01_JCVT, V01_JSPH,  &
-     &           V01_JCLOSE, V01_JPLASOL, V01_IREP, V01_IINT,        &
-     &           V01_IHET, V01_IGTYP, V01_ISORTH, V01_ISORTHG,       &
-     &           V01_ISRAT, V01_ISROT, V01_ICSEN, V01_IFAILURE,      &
-     &           V01_JSMS, V01_ISPH2SOL, V01_IPARTSPH, V01_IGRE,     &
-     &           V01_IFORMDT
-      COMMON /VECT11/ V01_LFT, V01_LLT, V01_NFT, V01_MTN, V01_IAD,  &
-     &                V01_ITY, V01_NPT, V01_JALE, V01_ISMSTR,        &
-     &                V01_JEUL, V01_JTUR, V01_JTHE, V01_JLAG,        &
-     &                V01_JMULT, V01_JHBE, V01_JIVF, V01_NVAUX,      &
-     &                V01_JPOR, V01_JCVT, V01_JSPH, V01_JCLOSE,      &
-     &                V01_JPLASOL, V01_IREP, V01_IINT, V01_IHET,     &
-     &                V01_IGTYP, V01_ISORTH, V01_ISORTHG, V01_ISRAT, &
-     &                V01_ISROT, V01_ICSEN, V01_IFAILURE, V01_JSMS,  &
-     &                V01_ISPH2SOL, V01_IPARTSPH, V01_IGRE,          &
-     &                V01_IFORMDT
 
   !=======================================================================
   !   S o u r c e  L i n e s
@@ -404,7 +383,7 @@
   !-----------------------------------------------------------------------
   !  (7) Small-rotation coordinate transform for small strain storage
   !-----------------------------------------------------------------------
-      CALL SMALLA3(GBUF%SMSTR, GBUF%OFF, OFF, WXX, WYY, WZZ, NEL, V01_ISMSTR, V01_JLAG)
+      CALL SMALLA3(GBUF%SMSTR, GBUF%OFF, OFF, WXX, WYY, WZZ, NEL, ISMSTR, JLAG)
 
   !-----------------------------------------------------------------------
   !  (8) Full Gauss integration (IU,IV,IT) over all lanes (IEL=1..NEL)
@@ -442,7 +421,7 @@
   !-----------------------------------------------------------------------
   !  (9) Update OFF/GBUF%OFF scaling after Gauss integration
   !-----------------------------------------------------------------------
-      CALL SMALLB3(GBUF%OFF, OFF, NEL, V01_ISMSTR)
+      CALL SMALLB3(GBUF%OFF, OFF, NEL, ISMSTR)
 
   !-----------------------------------------------------------------------
   !  (10) Assemble element-local forces into global A + update dt + stress averages
@@ -944,7 +923,7 @@
 
           ! rotates/updates stress with spin terms (WXX/WYY/WZZ)
           CALL SROTA3(LBUF%SIG, S1, S2, S3, S4, S5, S6, WXX, WYY, WZZ, &
-     &                  NEL, V01_MTN, IPARG(9,NG))
+     &                  NEL, MTN, IPARG(9,NG))
 
           ! volumetric strain increment
           DIVDE(1:NEL) = DT1 * (DXX(1:NEL) + DYY(1:NEL) + DZZ(1:NEL))
@@ -953,7 +932,7 @@
           CALL SRHO3(PM, LBUF%VOL, LBUF%RHO, LBUF%EINT, DIVDE, DUMMY_FLUX, FV, &
      &                 VOLN, DVOL, NGL_ELEM, MAT_ID_ELEM, OFF, IPARG(64,NG), &
      &                 GBUF%TAG22, VOLDP, LBUF%VOL0DP, AMU, GBUF%OFF, NEL, &
-     &                 V01_MTN, V01_JALE, V01_ISMSTR, V01_JEUL, V01_JLAG, 1, 1, 0)
+     &                 MTN, JALE, ISMSTR, JEUL, JLAG, 1, 1, 0)
 
 
           ! main material-law driver
@@ -966,7 +945,7 @@
      &                 MFYY, MFYZ, MFZX, MFZY, MFZZ, IPM, GAMA, FR_WAV, DXY, DYX, DYZ, DZY, &
      &                 DZX, DXZ, ISTRAIN, TEMPEL, DIE, IEXPAN, ILAY, MSSA, DMELS, IU, IV, IT, &
      &                 TABLE, FVD2, FDELTAX, FSSP, FQVIS, IPARG_LOCAL(:,1), IGEO, CONDE, ITASK, &
-     &                 NLOC_DMG, VARNL, MAT_ELEM, H3D_STRAIN, V01_JPLASOL, V01_JSPH, MVSIZ, &
+     &                 NLOC_DMG, VARNL, MAT_ELEM, H3D_STRAIN, JPLASOL, JSPH, MVSIZ, &
      &                 SNPC, STF, SBUFMAT, GLOB_THERM, SVIS, SZ_IX, IRESP, 0, TH_STRAIN, &
      &                 1, TT, DT1, NTABLE, NUMELQ, NUMMAT, NUMGEO, NUMNOD, NUMELS, &
      &                 IDEL7NOK, IDTMIN, MAXFUNC, IMON_MAT, USERL_AVAIL, IMPL_S, IDYNA, DT, &
@@ -974,7 +953,7 @@
 
           ! strain history update routine. Used to store the small-strain tensor
           ! Update LBUF%STRA (stored strain components) from current deformation-rate terms
-          CALL SSTRA3(DXX, DYY, DZZ, D4, D5, D6, LBUF%STRA, WXX, WYY, WZZ, OFF, NEL, V01_JCVT)
+          CALL SSTRA3(DXX, DYY, DZZ, D4, D5, D6, LBUF%STRA, WXX, WYY, WZZ, OFF, NEL, JCVT)
         END SUBROUTINE Q1NP_GP_MAT
 
 !=======================================================================
