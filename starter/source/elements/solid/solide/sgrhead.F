@@ -100,7 +100,7 @@ C-----------------------------------------------
      .        NOD2ELS(*), ISOLOFF(*),
      .        TAGPRT_SMS(*), SPH2SOL(*), 
      .        SOL2SPH(2,*),SOL2SPH_TYP(*),IFLAG_BPRELOAD(*)
-      INTEGER, INTENT(IN), OPTIONAL :: KQ1NP_TAB(15,*)
+      INTEGER, INTENT(INOUT) ::KQ1NP_TAB(15,NUMELQ1NP_G)
       INTEGER,INTENT(IN) :: IPM(NPROPMI,NUMMAT)
       INTEGER,INTENT(INOUT) :: IGEO(NPROPGI,NUMGEO)
       INTEGER, INTENT(IN)   :: DAMP_RANGE_PART(NPART)   ! < flag to compute the damping range
@@ -118,11 +118,9 @@ C-----------------------------------------------
       INTEGER 
      .        I,J,K, NN,
      .        II,II0,JJ0,II1,JJ1,II2,JJ2,JJ,II3,JJ3,II4,JJ4,II5,JJ5,
-     .        II6,JJ6,MODE,
+     .        II6,JJ6,II7,JJ7,MODE,
      .        INUM_R2R(1+R2R_SIU*NUMELS),
-     .        IPERT,STAT,
-     .        IS_Q1NP,IEL_Q1NP,NUM_Q1NP_FROM_ITRI
-      INTEGER, PARAMETER :: IDEBUG_Q1NP_SORT = 0
+     .        IPERT,STAT
           
       INTEGER WORK(70000)
       EXTERNAL MY_SHIFTL,MY_SHIFTR,MY_AND
@@ -148,12 +146,6 @@ C
         ALLOCATE(XNUM_RNOISE(NPERTURB,0),STAT=stat)
       ENDIF
 C
-      IF (IDEBUG_Q1NP_SORT > 0) THEN
-        WRITE(*,*) ''
-        WRITE(*,*) '=============================================='
-        WRITE(*,*) 'SGRHEAD: Checking Q1NP elements'
-        WRITE(*,*) '=============================================='
-      ENDIF
       DO I=1,NUMELS
         INDEX2(I)=PERMUTATION%SOLID(I)
         EADD(I)=1
@@ -191,7 +183,7 @@ C
         XEP(I)=CEP(I)
       ENDDO
 
-      itri(1:8,1:numels) = 0
+      itri(1:nb_key,1:numels) = 0
       call get_sort_key_solid(numels,nb_key,nummat,numgeo, 
      .                                 npart,npropgi, 
      .                                 npropmi,npropm,npropg, 
@@ -200,47 +192,7 @@ C
      .                                 itri,ixs,igeo, 
      .                                 ipm,pm,geo, 
      .                                 mat_param)
-      DO I=1,NUMELS
-Clef 9---------------------------------
-C       Q1NP element flag ITRI(9)
-        IS_Q1NP = 0
-        IF (NUMELQ1NP_G > 0) THEN
-          IF (PRESENT(KQ1NP_TAB)) THEN
-            DO IEL_Q1NP = 1, NUMELQ1NP_G
-              IF (KQ1NP_TAB(10, IEL_Q1NP) == I) THEN
-                IS_Q1NP = 1
 
-C           Debug: print Q1NP element information
-                IF (IDEBUG_Q1NP_SORT > 0) THEN
-                  WRITE(*,'(A,I4,A,I4,A)') 
-     .              'Element ', I, 
-     .              ' is Q1NP element (IEL_Q1NP=', IEL_Q1NP, ')'
-                ENDIF
-
-                EXIT
-              ENDIF
-            ENDDO
-          ENDIF
-        ENDIF
-        ITRI(9,I) = IS_Q1NP
-c        
-      ENDDO
-C
-C       Debug: print total Q1NP elements found in ITRI(9)
-      IF (IDEBUG_Q1NP_SORT > 0 .AND. NUMELQ1NP_G > 0) THEN
-        ! Count number of Q1NP elements by summing ITRI(9,:)
-        NUM_Q1NP_FROM_ITRI = 0
-
-C       count number of Q1NP elements by summing ITRI(9,:)
-        DO J = 1, NUMELS
-          IF (ITRI(9,J) == 1) NUM_Q1NP_FROM_ITRI = NUM_Q1NP_FROM_ITRI + 1
-        ENDDO
-
-        WRITE(*,'(A,I4,A,I4)') 
-     .    'Total Q1NP elements found: by input=', NUMELQ1NP_G,
-     .    ', by ITRI(9)=', NUM_Q1NP_FROM_ITRI
-      ENDIF
-C
       MODE=0
       CALL MY_ORDERS( MODE, WORK, ITRI, INDEX, NUMELS , 9)
 C
@@ -429,6 +381,15 @@ C
         ENDIF
       ENDDO
 !   -----------------------
+ !   Update KQ1NP_TAB_INV based on the new order after sorting      
+      IF (NUMELQ1NP_G > 0) THEN
+        KQ1NP_TAB_INV(1:NUMELS) = 0
+        DO  I=1,NUMELQ1NP_G
+          K = KQ1NP_TAB(10,I)
+          KQ1NP_TAB(10,I) = ITR1(K)
+          KQ1NP_TAB_INV(ITR1(K)) = I
+        ENDDO
+      ENDIF  
 C
 C--------------------------------------------------------------
 C         SUPER_GROUPS DETERMINATION
@@ -451,22 +412,16 @@ C--------------------------------------------------------------
         JJ5=ITRI(7,INDEX(I-1))
         II6=ITRI(8,INDEX(I))
         JJ6=ITRI(8,INDEX(I-1))
+        II7=ITRI(9,INDEX(I))
+        JJ7=ITRI(9,INDEX(I-1))
         IF(II0/=JJ0.OR.II/=JJ.OR.II1/=JJ1.OR.II2/=JJ2.OR.
      .     II5/=JJ5.OR.II3/=JJ3.OR.II4/=JJ4.OR.
-     .     II6/=JJ6) THEN
+     .     II6/=JJ6.OR.II7/=JJ7) THEN
           ND=ND+1
           EADD(ND)=I
         ENDIF
       ENDDO
       EADD(ND+1) = NUMELS+1
-      IF (IDEBUG_Q1NP_SORT > 0) THEN
-        WRITE(*,'(A,I4)') 'Number of super-groups (ND) = ', ND
-        DO I = 1, ND
-          WRITE(*,'(A,I4,A,I4,A,I4)') 
-     .      'Super-group ', I, ': elements (EADD(I)) = ', EADD(I), 
-     .      ' to ', EADD(I+1)-1
-        ENDDO
-      ENDIF
       DEALLOCATE(INDEX2)
 c
       IF (NPERTURB > 0) THEN

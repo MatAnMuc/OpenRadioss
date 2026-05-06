@@ -41,7 +41,7 @@ Copyright>        commercial version may interest you: https://www.altair.com/ra
      .           IPARTSP   ,IXS      ,IXQ      ,IXC      ,IXTG      ,
      .           FLAG_XFEM ,IPARTIG3D,STACK    ,IGEO_STACK,
      .           IXT       ,IXP      ,IXR      ,KXX      ,GEO       ,
-     .           EOS_TAG   ,ISTR_24  ,PRINT_FLAG, DEFAULTS,KQ1NP_TAB)
+     .           EOS_TAG   ,ISTR_24  ,PRINT_FLAG,DEFAULTS)
 C-----------------------------------------------
 C   M o d u l e s
 C-----------------------------------------------
@@ -108,12 +108,9 @@ C-----------------------------------------------
      .   NONL, DEBUG_PRINT,IPINCH,NVAR_EOS,IEOS_TYPE,IDRAPE,LLOC_SLICE,
      .   IPNPT_LAY,IDFAIL,LNLOCTS,ICONTROL,IDAMP_FREQ_RANGE,
      .   LDAMP_FREQ_RANGE,NVAR_DAMP_FREQ_RANGE,NPT0,L_EPS  ,L_SIG ,LY_EINT, LY_COUNT,
-     .   IEL_Q1NP_FOUND, IEL, LQ1NP 
-      INTEGER, INTENT(IN), OPTIONAL :: KQ1NP_TAB(15,*)
-      INTEGER, PARAMETER :: IDEBUG_Q1NP_BUF = 0
-      LOGICAL :: IS_Q1NP_GROUP, IS_ELEMENT_Q1NP, IS_Q1NP_CHECK
+     .   IEL, LQ1NP, I_Q1NP_GROUP
+      LOGICAL :: IS_ELEMENT_Q1NP, IS_Q1NP_CHECK
       my_real :: XI_GP, ETA_GP, ZETA_GP, GP_WEIGHT, GP_WT_CHECK
-
       INTEGER, ALLOCATABLE, DIMENSION(:,:) :: TFAIL,FAILID
       INTEGER, ALLOCATABLE, DIMENSION(:)   :: IMAT,ILAW
       TYPE(BUF_LAY_)     , POINTER :: BUFLY
@@ -129,13 +126,6 @@ c------
 c      1) size of the ELBUF array for restart
 c      2) allocation of the ELBUF_TAB structure
 C=======================================================================
-      IF (IDEBUG_Q1NP_BUF > 0) THEN
-        WRITE(*,*) ''
-        WRITE(*,*) '=============================================='
-        WRITE(*,*) 'ELBUF_INI: Checking Q1NP elements'
-        WRITE(*,*) '=============================================='
-      ENDIF
-
       DEBUG_PRINT = 0
 c      
       IF(PRINT_FLAG>6) WRITE(IOUT, 1001)
@@ -217,6 +207,8 @@ c
         ELSE  
           NVAR_DAMP_FREQ_RANGE = 21*MIN(1,IDAMP_FREQ_RANGE)
         ENDIF  
+        I_Q1NP_GROUP = IPARG(94,NG)
+c        
         NINTLAY = 0
         NPT0 = NPT
 cc        NXEL    = 0
@@ -229,7 +221,7 @@ c----
 c if xfem, count buffer's length only in the groups with xfem phantom elements  
 cc        IF (ICRACK3D > 0 .AND. IXFEM == 0) CYCLE
 c----
-         IS_Q1NP_GROUP = .FALSE.                                 
+                                                      
          IF (DEBUG_PRINT == 1) THEN
             print*,'**** GROUP,ITY,IGTYP,MLW=',ng,ity,igtyp,mlw
             print*,'     NPAR_TAB,NPAR_LAY,NPAR_LBUF=',NPAR_TAB,NPAR_LAY,NPAR_LBUF
@@ -259,40 +251,6 @@ c         solid, quad & SPH cell elements
 c
 c=======================================================================
 
-C Check if this is a Q1NP group 
-          IF (ITY == 1) THEN
-            NFT = IPARG(3,NG)
-            IF (NUMELQ1NP_G > 0 .AND. Q1NP_NP_U_G > 0) THEN
-              IF (PRESENT(KQ1NP_TAB)) THEN
-                IS_Q1NP_GROUP = .TRUE.
-                DO I = 1, NEL
-                  II = NFT + I
-                  IS_ELEMENT_Q1NP = .FALSE.
-                  IEL_Q1NP_FOUND = 0
-                  DO IEL_Q1NP = 1, NUMELQ1NP_G
-                    IF (KQ1NP_TAB(5, IEL_Q1NP) == IXS(NIXS, II)) THEN
-                      IS_ELEMENT_Q1NP = .TRUE.
-                      IEL_Q1NP_FOUND = IEL_Q1NP
-                      EXIT
-                    ENDIF
-                  ENDDO
-                  IF (.NOT. IS_ELEMENT_Q1NP) THEN
-                    IS_Q1NP_GROUP = .FALSE.
-                    EXIT
-                  ENDIF
-                ENDDO
-              ENDIF
-            ENDIF
-          ENDIF
-
-          ! Q1NP group: use Gauss scheme from IPARG (set in sgrtails)
-          IF (IS_Q1NP_GROUP) THEN
-            NPTR = IPARG(56,NG)
-            NPTS = IPARG(57,NG)
-            NPTT = IPARG(58,NG)
-            NPG = NPTR * NPTS * NPTT
-          ENDIF
-            
           TSHELL  = 0
           TSH_ORT = 0
           IF (IGTYP==20 .OR. IGTYP==21 .OR. IGTYP==22 .or. 
@@ -302,12 +260,23 @@ c
 c---------ELEMENT PROPERTY
           IF (ITY == 101) THEN
             NLAY = 1
-          ELSEIF (NPT == 1) THEN
-            IF (.NOT. IS_Q1NP_GROUP) THEN
-              NPTR  = 1                           
-              NPTS  = 1                          
-              NPTT  = 1 
+          ELSEIF (I_Q1NP_GROUP == 1) THEN
+c           Set Q1NP Gauss scheme parameters for Q1NP elements
+            IF (Q1NP_NP_U_G > 0 .AND. Q1NP_NP_V_G > 0 .AND. Q1NP_NP_T_G > 0) THEN
+              NPTR = Q1NP_NP_U_G
+              NPTS = Q1NP_NP_V_G
+              NPTT = Q1NP_NP_T_G
+            ELSE
+C             Error: Gauss scheme not properly initialized
+              NPTR = 3
+              NPTS = 3
+              NPTT = 2
             ENDIF
+            NLAY = 1
+          ELSEIF (NPT == 1) THEN
+            NPTR  = 1                           
+            NPTS  = 1                          
+            NPTT  = 1 
             IF (JMULT > 0) THEN   ! multimateriau 
               NLAY = 2
             ELSE     
@@ -442,7 +411,7 @@ c----------------------------------------------------
             ALLOCATE(BUFLY%VISC(NPTR,NPTS,NPTT))  
             ALLOCATE(BUFLY%PORO(NPTR,NPTS,NPTT))  
 C           Q1NP buffer allocation (only for Q1NP groups)
-            IF (IS_Q1NP_GROUP) THEN
+            IF (I_Q1NP_GROUP==1) THEN
               ALLOCATE(BUFLY%Q1NP(NPTR,NPTS,NPTT))
             ELSE
               ALLOCATE(BUFLY%Q1NP(0,0,0))  ! Empty allocation for non-Q1NP groups
@@ -709,7 +678,7 @@ c
                 LEOS  = LEOS  + NVAR_EOS*NEL
 C
 C               Q1NP buffer allocation and initialization (only for Q1NP groups)
-                IF (IS_Q1NP_GROUP) THEN
+                IF (I_Q1NP_GROUP==1) THEN
 C                 Allocate: 3*NEL for GP_COORD (ξ, η, ζ per element), NEL for GP_WEIGHT
                   CALL MY_ALLOC(ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_COORD, 3*NEL)
                   CALL MY_ALLOC(ELBUF_TAB(NG)%BUFLY(IL)%Q1NP(IR,IS,IT)%GP_WEIGHT, NEL)
@@ -1159,7 +1128,6 @@ c            Lloc = lloc + bufly%l_Vol0dp
             BUFLEN = BUFLEN + (LLOC * NEL + NPAR_LBUF) * NPG       
           ENDDO
 c          print*,'      local=',(LLOC * NEL + NPAR_LBUF) * NPG
-c-----------------------------------
 c-----------------------------------
           IPARG(66,NG) = BUFLEN    !  size of restart transfer table 
 c          print*,' elbuf_ini : buflen=',buflen
@@ -2057,10 +2025,6 @@ c
 c          
           ENDDO
           IPARG(66,NG) = BUFLEN    !  size of restart transfer table 
-          IF (DEBUG_PRINT == 1) THEN
-            WRITE(*,'(A,I4,A,I10)') 
-     .        '  elbuf_ini: Group ', NG, ', Buffer length = ', BUFLEN
-          ENDIF
  
           IF(PRINT_FLAG>6) WRITE(IOUT,1002) NG, BUFLEN
 c
@@ -2485,16 +2449,6 @@ c---------  local variables
           DO IL=1,NLAY  ! NLAY = 1 for INTEGRATED BEAM
             BUFLY => ELBUF_TAB(NG)%BUFLY(IL)
             NIP_LAY = BUFLY%NPTT
-C           Debug: Print layer info (always for Q1NP groups)
-            IF (IDEBUG_Q1NP_BUF > 0) THEN
-              WRITE(*,'(A,I4,A,I4,A,I4)') 
-     .          '  Q1NP DEBUG: Processing Layer ', IL, ' of ', NLAY, 
-     .          ' for Group ', NG
-              WRITE(*,'(A,I4,A,I4,A,I4)') 
-     .          '    NPTR=', NPTR, ', NPTS=', NPTS, ', NPTT=', NPTT
-              WRITE(*,'(A,I4)') 
-     .          '    BUFLY%NPTT=', BUFLY%NPTT
-            ENDIF
 c
             LLOC = 0                                 
             LLOC = LLOC + BUFLY%L_OFF    
@@ -2562,7 +2516,6 @@ c
             LLOC = LLOC + BUFLY%L_TSAIWU
 c
             BUFLEN = BUFLEN + (LLOC * NEL + NPAR_LBUF) * NIP_LAY
-C
           ENDDO
 c---------
 C----
@@ -2572,28 +2525,8 @@ C----
 c
 c-------------------------------------------------
           IPARG(66,NG) = BUFLEN    !  size of restart transfer table 
-          IF (DEBUG_PRINT == 1 .OR. IDEBUG_Q1NP_BUF > 0) THEN
-            WRITE(*,'(A,I4,A,I10)') 
-     .        '  elbuf_ini: Group ', NG, ', Buffer length = ', BUFLEN
-          ENDIF
 c 
           IF(PRINT_FLAG>6) WRITE(IOUT,1002) NG, BUFLEN
-C
-C         Debug: Print Q1NP buffer summary
-          IF (IDEBUG_Q1NP_BUF > 0 .AND. IS_Q1NP_GROUP) THEN
-            WRITE(*,'(A,I4,A,I10)') 
-     .        '  Q1NP Group ', NG, ' total buffer length: ', BUFLEN
-            WRITE(*,'(A,I4,A,I4,A,I4,A,I4)') 
-     .        '    Total Gauss points: ', NPTR*NPTS*NPTT, 
-     .        ' (', NPTR, 'x', NPTS, 'x', NPTT, ')'
-            WRITE(*,'(A,I4,A)') 
-     .        '    Elements in group: ', NEL
-            WRITE(*,'(A,I10,A)') 
-     .        '    Q1NP buffer size per GP: 4*NEL = ', 4*NEL, ' reals'
-            WRITE(*,'(A,I10,A)') 
-     .        '    Total Q1NP buffer size: ', NPTR*NPTS*NPTT*4*NEL, ' reals'
-            WRITE(*,*) ''
-          ENDIF
 c-------------------------------------------------
           CALL ALLOCBUF_AUTO(ELBUF_TAB,NLAY,NPTR,NPTS,NPTT,
      .                       NINTLAY,NEL,NPT,NG,NGROUP,ITY,

@@ -24,6 +24,8 @@
         INTEGER :: TABVINT_LEN_G    = 0
         INTEGER :: NKQ1NP_G         = 0
         LOGICAL, ALLOCATABLE :: IS_Q1NP_REPLACED_G(:)
+!
+        INTEGER, DIMENSION(:),   ALLOCATABLE :: KQ1NP_TAB_INV        
 ! 
 !     Q1NP Gauss quadrature scheme variables
 ! 
