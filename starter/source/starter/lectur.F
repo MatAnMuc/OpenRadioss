@@ -3973,8 +3973,16 @@ C         Bases for appending surface B results.
      .                              C1='Q1NP_CPTAB')
           ENDIF
 
+          IF (NUMELQ1NP_G > 0) THEN
+            ALLOCATE(KQ1NP_TAB_INV(NUMELS) ,STAT=stat)
+            IF(STAT /= 0) CALL ANCMSG(MSGID=268,ANMODE=ANINFO,
+     .                            MSGTYPE=MSGERROR,
+     .                            C1='KQ1NP_TAB_INV')
+          ENDIF
+
 C         Initialize arrays to zero.
           KQ1NP_TAB(:,:) = 0
+          IF (NUMELQ1NP_G > 0) KQ1NP_TAB_INV(1:NUMELS) = 0
           IF(SIQ1NP_G > 0) IQ1NP_TAB = 0
           IF(SQ1NPBULK_G > 0) IQ1NP_BULK_TAB = 0
           IF(SQ1NPWEIGHT_L_G > 0) Q1NP_WTAB = ZERO
@@ -4325,6 +4333,11 @@ C         Single surface B only (A missing or has no segments).
       ENDIF
 
       IF (NUMELQ1NP_G > 0) THEN
+C
+C         Store inverse connectivity of KQ1NP_TAB       
+          DO I=1, NUMELQ1NP_G
+            KQ1NP_TAB_INV(KQ1NP_TAB(10,I)) = I
+          END DO
 
 C         Define Gauss scheme for Q1Np elements (P_TEST/Q_TEST fixed in this prototype).
           NP_U_Q1NP = P_TEST + 1
@@ -7596,15 +7609,6 @@ C After IDDLEVEL Finish Indexes - Fill PERMUTATION%SOLID(NUMELS+1,PERMUTATION%SO
            N=PERMUTATION%SOLID(I)
            PERMUTATION%SOLID(NUMELS+N)=I
         ENDDO
-
-        ! Update KQ1NP_TAB(10, IEL) to the new hex element ID
-        IF (NUMELQ1NP_G > 0) THEN
-          DO IEL = 1, NUMELQ1NP_G
-            IEL_HEX8 = KQ1NP_TAB(10, IEL)
-            N = PERMUTATION%SOLID(NUMELS + IEL_HEX8)
-            KQ1NP_TAB(10, IEL) = N
-          ENDDO
-        ENDIF
         
 !       already done in SGRHEAD / SGRTAILS
 !        CALL APPLYSORT2CLUSTER(CLUSTERS,PERMUTATION%SOLID(NUMELS+1:2*NUMELS))
@@ -9990,7 +9994,7 @@ C
      .               IPARTSP  ,IXS      ,IXQ      ,IXC        ,IXTG      ,
      .               FLAG_XFEM,IPARTIG3D,STACK    ,IGEO_STACK ,
      .               IXT      ,IXP      ,IXR      ,KXX        ,GEO       ,
-     .               EOS_TAG  ,ISTR_24  ,IPRI     ,DEFAULTS, KQ1NP_TAB)
+     .               EOS_TAG  ,ISTR_24  ,IPRI     ,DEFAULTS)
 C---
 C  if xfem
 c---
